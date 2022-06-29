@@ -30,7 +30,7 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     group_id = event.group_id
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
-        meals = await get_ellyes_meal()
+        meals = await get_ellyes_meal(event.self_id)
         img = Txt2Img(font_size)
         pic = img.save("怡宝今天的菜单：", meals)
         await ellyesmeal.finish(MessageSegment.image(pic))
@@ -91,8 +91,8 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
     await ellyesmeal.finish(MessageSegment.image(pic))
 
 
-async def get_ellyes_meal():
-    bot = get_bot("1490228127")
+async def get_ellyes_meal(id):
+    bot = get_bot(str(id))
     today = datetime.now().day
     Mealdb = Query()
     meals = db.search((Mealdb.est_arrival_time > datetime.timestamp(
@@ -137,7 +137,8 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 @query_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bot = get_bot("1490228127")
+    bot_id = event.self_id
+    bot = get_bot(str(bot_id))
     sub_commands = str(args).split("#")
     meal = await get_detailed_meal(id=sub_commands[0].upper())
     if len(sub_commands) == 2 and sub_commands[0] == "":
