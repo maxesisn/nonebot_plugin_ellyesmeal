@@ -1,8 +1,9 @@
+from operator import ge
 from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment
 from nonebot.typing import T_State
-from nonebot.params import State, CommandArg
+from nonebot.params import State, CommandArg, EventMessage
 from nonebot.permission import SUPERUSER
-from nonebot import get_bot
+from nonebot import get_bot, get_driver
 from nonebot import on_command
 
 from nonebot_plugin_txt2img import Txt2Img
@@ -10,6 +11,8 @@ from nonebot_plugin_txt2img import Txt2Img
 import uuid
 from tinydb import TinyDB, Query
 from datetime import datetime
+
+global_config = get_driver().config
 
 font_size = 32
 
@@ -22,6 +25,7 @@ update_meal_status = on_command("更新外卖状态")
 query_meal = on_command("查询外卖")
 delete_meal = on_command("删除外卖")
 force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER)
+confirm_record = on_command("1")
 
 
 @ellyesmeal.handle()
@@ -75,6 +79,10 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
             await ellyesmeal.reject(MessageSegment.image(pic))
 
     unique_id = str(uuid.uuid4())[:4]
+
+    result = db.search(Query().id == unique_id)
+    while len(result) > 0:
+        unique_id = str(uuid.uuid4())[:4]
     data = {
         "id": unique_id.upper(),
         "giver": event.get_user_id(),
@@ -127,8 +135,13 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
         await update_meal_status.finish("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID#状态")
     meal_id = sub_commands[0].upper()
     meal_status = sub_commands[1]
-    result = db.update({"status": meal_status}, Query().id == meal_id)
-    if result and result[0] > 0:
+    queried_meal = db.get(Query().id == meal_id)
+    if queried_meal:
+        if queried_meal["giver"] != event.get_user_id():
+            if queried_meal["giver"] != global_config.superusers[0]:
+                await update_meal_status.finish("您配吗？")
+        result = db.update({"status": meal_status}, Query().id == meal_id)
+
         await update_meal_status.finish(f"外卖{meal_id}状态已更新为：{meal_status}")
     else:
         await update_meal_status.finish(f"外卖{meal_id}不存在！")
@@ -181,3 +194,8 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     for id in ids:
         db.remove(Query().id == id.upper())
     await force_delete_meal.finish("已删除指定的外卖信息")
+
+@confirm_record.handle()
+async def _(event: GroupMessageEvent, msg: Message = EventMessage(), state: T_State = State()):
+    for seg in event.get_message():
+        print(seg)
