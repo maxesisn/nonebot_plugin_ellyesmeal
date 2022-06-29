@@ -8,7 +8,6 @@ from nonebot import on_command
 from nonebot_plugin_txt2img import Txt2Img
 
 import uuid
-from requests import delete
 from tinydb import TinyDB, Query
 from datetime import datetime
 
