@@ -26,6 +26,7 @@ query_meal = on_command("查询外卖")
 delete_meal = on_command("删除外卖")
 force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER)
 confirm_record = on_command("1")
+meal_howto = on_command("投食指南", aliases={"投喂指南"})
 
 
 @ellyesmeal.handle()
@@ -123,7 +124,7 @@ async def get_detailed_meal(id):
 
 
 async def get_ellyesmeal_help():
-    return "如何查询怡宝收到的外卖？发送`怡宝今天吃什么`可查询今天已经点给怡宝的外卖.\n如何使用本插件记录给怡宝点的外卖？\n请按照如下格式发送命令：\n怡宝今天吃 外卖内容#商家名#点餐渠道(可省略)#预计送达时间#状态\n如何更新外卖状态？\n发送：更新外卖状态 外卖ID#<状态>\n提示：外卖状态可为：未送达/xx号门xxx取件码/已送达之类，无格式限制。\n如何查询单个外卖的详细信息？发送查询外卖 <ID>即可。\n如何删除自己发的外卖信息？\n发送删除外卖<ID>即可。"
+    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃 外卖内容#商家名#点餐渠道(可省略)#预计送达时间#状态\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID#<状态>\n提示：外卖状态可为：未送达/xx号门xxx取件码/已送达之类，无格式限制。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>即可。\n⑤.删除自己发的外卖信息:\n发送删除外卖<ID>即可。"
 
 
 @update_meal_status.handle()
@@ -138,7 +139,7 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     queried_meal = db.get(Query().id == meal_id)
     if queried_meal:
         if queried_meal["giver"] != event.get_user_id():
-            if queried_meal["giver"] != global_config.superusers[0]:
+            if event.get_user_id() != list(global_config.superusers)[0]:
                 await update_meal_status.finish("您配吗？")
         result = db.update({"status": meal_status}, Query().id == meal_id)
 
@@ -195,7 +196,20 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
         db.remove(Query().id == id.upper())
     await force_delete_meal.finish("已删除指定的外卖信息")
 
+
 @confirm_record.handle()
 async def _(event: GroupMessageEvent, msg: Message = EventMessage(), state: T_State = State()):
     for seg in event.get_message():
         print(seg)
+
+
+@meal_howto.handle()
+async def _(event: GroupMessageEvent):
+    if not event.group_id == 367501912:
+        await meal_howto.finish()
+    img = Txt2Img(font_size)
+    howto = "1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的饮品/甜食等，谨慎购买主食，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
+    help = await get_ellyesmeal_help()
+    howto += help
+    pic = img.save("投喂指南", howto)
+    await meal_howto.finish(MessageSegment.image(pic))
