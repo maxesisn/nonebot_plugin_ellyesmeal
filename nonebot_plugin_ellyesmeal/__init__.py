@@ -1,4 +1,3 @@
-from operator import ge
 from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment
 from nonebot.typing import T_State
 from nonebot.params import State, CommandArg, EventMessage
@@ -11,6 +10,7 @@ from nonebot_plugin_txt2img import Txt2Img
 import uuid
 from tinydb import TinyDB, Query
 from datetime import datetime
+from calendar import monthrange
 
 global_config = get_driver().config
 
@@ -32,6 +32,7 @@ meal_howto = on_command("投食指南", aliases={"投喂指南"})
 @ellyesmeal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     group_id = event.group_id
+    
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
         meals = await get_ellyes_meal(event.self_id)
@@ -101,10 +102,19 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
 
 async def get_ellyes_meal(id):
     bot = get_bot(str(id))
+    year = datetime.now().year
+    month = datetime.now().month
     today = datetime.now().day
+    if today == 1:
+        month = month - 1
+        if month == 0:
+            month = 12
+            year = year - 1
+        today = monthrange(year, month)[1] + 1
+
     Mealdb = Query()
     meals = db.search((Mealdb.est_arrival_time > datetime.timestamp(
-        datetime.now().replace(day=today-1, hour=23, minute=0, second=0))) | (Mealdb.status == "在吃"))
+        datetime.now().replace(year=year, month=month, day=today-1, hour=23, minute=0, second=0))) | (Mealdb.status == "在吃"))
     print(meals)
     msg = ""
     for meal in meals:
@@ -208,7 +218,7 @@ async def _(event: GroupMessageEvent):
     if not event.group_id == 367501912:
         await meal_howto.finish()
     img = Txt2Img(font_size)
-    howto = "1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的饮品/甜食等，谨慎购买主食，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
+    howto = "1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食饮品/甜食等，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
     help = await get_ellyesmeal_help()
     howto += help
     pic = img.save("投喂指南", howto)
