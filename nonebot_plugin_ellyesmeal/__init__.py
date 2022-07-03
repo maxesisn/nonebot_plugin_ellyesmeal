@@ -1,8 +1,8 @@
 from typing import Tuple
-from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment, Bot, Event
 from nonebot.typing import T_State
 from nonebot.params import State, CommandArg, Command
-from nonebot.permission import SUPERUSER
+from nonebot.permission import SUPERUSER, Permission
 from nonebot import get_bot, get_driver
 from nonebot import on_command
 from nonebot.log import logger
@@ -10,8 +10,9 @@ from nonebot.log import logger
 from nonebot_plugin_txt2img import Txt2Img
 
 from .data_source import get_gm_info as db_get_gminfo, set_gm_info as db_set_gminfo
-from .data_source import set_badeps as db_set_badeps, get_badep as db_get_badep
+from .data_source import set_goodeps as db_set_goodeps, get_goodep as db_get_goodep
 
+import re
 import uuid
 from tinydb import TinyDB, Query
 from datetime import datetime, timedelta
@@ -26,12 +27,17 @@ blacklist = ["114514", "昏睡", "田所", "查理酱", "[CQ:", "&#91;CQ:"]
 
 db = TinyDB('/home/maxesisn/botData/misc_data/ellyesmeal.json')
 
+zh_pat = re.compile(r"[\u4e00-\u9fa5]")
+
+async def ELLYE(bot: Bot, event: Event) -> bool:
+    return event.get_user_id() == "491673070"
+
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝" , "怡宝明天吃", "怡宝明天喝"})
 update_meal_status = on_command("更新外卖状态")
 delete_meal = on_command("删除外卖")
-force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER)
+force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER|ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"})
-mark_bad_ep = on_command("标记劣质怡批", permission=SUPERUSER)
+mark_good_ep = on_command("标记优质怡批", permission=SUPERUSER|ELLYE)
 
 
 def to_img_msg(content, title="信息"):
@@ -39,28 +45,30 @@ def to_img_msg(content, title="信息"):
     pic = img.save(title, content)
     return MessageSegment.image(pic)
 
-async def get_badep_status(id):
-    badep = await db_get_badep(id)
-    return True if badep is not None else False
+async def get_goodep_status(id):
+    goodep = await db_get_goodep(id)
+    return True if goodep is not None else False
 
 
 @ellyesmeal.handle()
 async def _(event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
-        await ellyesmeal.finish()
     group_id = event.group_id
     command = command[0]
     day = "今天" if command == "怡宝今天吃" else "明天"
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
         meals = await get_ellyes_meal(event.self_id, day)
-
         await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
+    if len(sub_commands) == 1 and sub_commands[0] == "什么帮助":
+        help = await get_ellyesmeal_help()
+        await ellyesmeal.finish(to_img_msg(help, "帮助"))
     if len(sub_commands) > 1 and sub_commands[1] == "帮助":
         help = await get_ellyesmeal_help()
         await ellyesmeal.finish(to_img_msg(help, "帮助"))
+    ges = await get_goodep_status(event.user_id)
+    if not ges:
+        logger.info(f"{event.user_id} is not marked as good ep, ignored")
+        await ellyesmeal.finish()
     state["day"] = day
     state["meal_string_data"] = sub_commands
 
@@ -77,6 +85,10 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
     meal_string = meal_string.strip()
     if meal_string == "":
         await ellyesmeal.finish()
+    if not zh_pat.search(meal_string):
+        await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "卑鄙的"))
+    if meal_string == "我":
+        await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为做梦", "虚无缥缈的"))
     if len(meal_string) > 30:
         await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "虚伪的"))
 
@@ -193,9 +205,9 @@ async def get_ellyesmeal_help():
 
 @update_meal_status.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
+    ges = await get_goodep_status(event.user_id)
+    if not ges:
+        logger.info(f"{event.user_id} is not marked as good ep, ignored")
         await ellyesmeal.finish()
     sub_commands = str(args)
     sub_commands = sub_commands.split(" ")
@@ -222,9 +234,9 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 @delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
+    ges = await get_goodep_status(event.user_id)
+    if not ges:
+        logger.info(f"{event.user_id} is not marked as good ep, ignored")
         await ellyesmeal.finish()
     sub_commands = str(args)
     if len(sub_commands) != 4:
@@ -242,10 +254,6 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 @force_delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
-        await ellyesmeal.finish()
     ids = str(args).split(" ")
     if ids[0] == "全部":
         year = datetime.now().year
@@ -268,9 +276,9 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 @meal_howto.handle()
 async def _(event: GroupMessageEvent):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
+    ges = await get_goodep_status(event.user_id)
+    if not ges:
+        logger.info(f"{event.user_id} is not marked as good ep, ignored")
         await ellyesmeal.finish()
     if not event.group_id == 367501912:
         await meal_howto.finish()
@@ -279,26 +287,12 @@ async def _(event: GroupMessageEvent):
     howto += help
     await meal_howto.finish(to_img_msg(howto, "投喂指南"))
 
-@mark_bad_ep.handle()
+@mark_good_ep.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bes = await get_badep_status(event.user_id)
-    if bes:
-        logger.info(f"{event.user_id} is already marked as bad ep")
-        await ellyesmeal.finish()
-    args = str(args).split(" ")
-    timeset = args[0]
-    if timeset == "永久":
-        timeset = None
-    elif timeset.endswith("d"):
-        timeset = int(timeset[:-1]) * 24 * 60 * 60
-    elif timeset.endswith("h"):
-        timeset = int(timeset[:-1]) * 60 * 60
-    elif timeset.endswith("m"):
-        timeset = int(timeset[:-1]) * 60
     for ms in event.get_message():
         if ms.type == "at":
-            bad_ep = ms.data["qq"]
-            await db_set_badeps(bad_ep, timeset)
-    await mark_bad_ep.finish("ok")
+            good_ep = ms.data["qq"]
+            await db_set_goodeps(good_ep, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    await mark_good_ep.finish("ok")
 
     
