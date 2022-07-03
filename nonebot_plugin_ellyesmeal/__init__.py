@@ -1,107 +1,142 @@
+from typing import Tuple
 from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment
 from nonebot.typing import T_State
-from nonebot.params import State, CommandArg, EventMessage
+from nonebot.params import State, CommandArg, Command
 from nonebot.permission import SUPERUSER
 from nonebot import get_bot, get_driver
 from nonebot import on_command
+from nonebot.log import logger
 
 from nonebot_plugin_txt2img import Txt2Img
 
+from .data_source import get_gm_info as db_get_gminfo, set_gm_info as db_set_gminfo
+from .data_source import set_badeps as db_set_badeps, get_badep as db_get_badep
+
 import uuid
 from tinydb import TinyDB, Query
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
 from calendar import monthrange
 
 global_config = get_driver().config
 
 font_size = 32
 
-blacklist = ["114514", "昏睡", "田所", "查理酱"]
+blacklist = ["114514", "昏睡", "田所", "查理酱", "[CQ:", "&#91;CQ:"]
 
 db = TinyDB('/home/maxesisn/botData/misc_data/ellyesmeal.json')
 
-ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝"})
+ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝" , "怡宝明天吃", "怡宝明天喝"})
 update_meal_status = on_command("更新外卖状态")
-query_meal = on_command("查询外卖")
 delete_meal = on_command("删除外卖")
 force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER)
-confirm_record = on_command("1")
 meal_howto = on_command("投食指南", aliases={"投喂指南"})
+mark_bad_ep = on_command("标记劣质怡批", permission=SUPERUSER)
+
+
+def to_img_msg(content, title="信息"):
+    img = Txt2Img(font_size)
+    pic = img.save(title, content)
+    return MessageSegment.image(pic)
+
+async def get_badep_status(id):
+    badep = await db_get_badep(id)
+    return True if badep is not None else False
 
 
 @ellyesmeal.handle()
-async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
     group_id = event.group_id
-    
+    command = command[0]
+    day = "今天" if command == "怡宝今天吃" else "明天"
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
-        meals = await get_ellyes_meal(event.self_id)
-        img = Txt2Img(font_size)
-        pic = img.save("怡宝今天的菜单：", meals)
-        await ellyesmeal.finish(MessageSegment.image(pic))
+        meals = await get_ellyes_meal(event.self_id, day)
+
+        await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
     if len(sub_commands) > 1 and sub_commands[1] == "帮助":
         help = await get_ellyesmeal_help()
-        img = Txt2Img(font_size)
-        pic = img.save("帮助：", help)
-        await ellyesmeal.finish(MessageSegment.image(pic))
-    state["meal_string"] = sub_commands[0]
+        await ellyesmeal.finish(to_img_msg(help, "帮助"))
+    state["day"] = day
+    state["meal_string_data"] = sub_commands
 
 
-@ellyesmeal.got("meal_string", prompt="怡宝今天吃什么？\n注：发送`怡宝今天吃什么 帮助`可查看帮助信息")
+@ellyesmeal.got("meal_string_data")
 async def _(event: GroupMessageEvent, state: T_State = State()):
-    time_format = "%H:%M"
-    meal_string = str(state["meal_string"])
+    meal_string_data: list[str] = state["meal_string_data"]
+    day = state["day"]
+    meal_string = "".join(meal_string_data)
+    
     if any(word in meal_string for word in blacklist):
-        await ellyesmeal.finish("怡宴丁真，鉴定为假")
+        await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "整蛊的"))
+
     meal_string = meal_string.strip()
-    meal_string = meal_string.replace("＃", "#")
-    meal_string_info = str(meal_string).split("#")
-    if len(meal_string_info) == 1:
+    if meal_string == "":
         await ellyesmeal.finish()
-    if len(meal_string_info) < 4:
-        img = Txt2Img(font_size)
-        pic = img.save(
-            "命令语法错误：", "格式错误，请按照如下格式发送信息：外卖内容#商家名#点餐渠道(可省略)#预计送达时间（hh:mm）#状态\n注：不能带空格")
-        await ellyesmeal.reject(MessageSegment.image(pic))
+    if len(meal_string) > 30:
+        await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "虚伪的"))
 
-    if len(meal_string_info) == 4:
-        meal_string_info.insert(2, "<无>")
+    est_arrival_time = meal_string_data[-1]
+    est_arrival_time = est_arrival_time.replace("：", ":").replace(":", "")
+    is_tomorrow = True if day == "明天" else False
+    is_time_recorded = True
+    # 判断时间是否为 HHMM 格式
+    if est_arrival_time.isdigit():
+        est_arrival_time = int(est_arrival_time)
+        if est_arrival_time < 100 or est_arrival_time > 2400:
+            is_time_recorded = False
+        else:
+            minute = int(est_arrival_time % 100)
+            hour = int(est_arrival_time / 100)
+            est_arrival_time = datetime.now().replace(hour=hour, minute=minute)
 
-    if len(meal_string_info) == 5:
-        try:
-            meal_string_info[3] = meal_string_info[3].replace("：", ":")
-            meal_string_info[3] = datetime.strptime(
-                meal_string_info[3], time_format)
-            meal_string_info[3] = meal_string_info[3].replace(
-                year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
-        except ValueError:
-            img = Txt2Img(font_size)
-            pic = img.save(
-                "命令语法错误：", "格式错误，请按照如下格式发送信息：外卖内容#商家名#点餐渠道(可省略)#预计送达时间（hh:mm）#状态\n注：不能带空格")
-            await ellyesmeal.reject(MessageSegment.image(pic))
+    # 处理没有指定时间的情况
+    else:
+        est_arrival_time = datetime.now() + timedelta(hours=1)
+        is_time_recorded = False
+
+    # 处理预计送达时间为明天的情况
+    if is_tomorrow:
+        # 如果时间只为"明天"，则默认为明天12:00
+        if not is_time_recorded:
+            est_arrival_time = datetime.now() + timedelta(days=1)
+            est_arrival_time = est_arrival_time.replace(hour=12, minute=0)
+        # 如果还写了时间，则修改为明天的该时间
+        else:
+            est_arrival_time += timedelta(days=1)
+
+    # 判断是否已过预计送达时间
+    if est_arrival_time < datetime.now():
+        await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "错误的"))
+
+    if is_time_recorded:
+        meal_string_data = meal_string_data[:-1]
+    meal_string = "+".join(meal_string_data)
 
     unique_id = str(uuid.uuid4())[:4]
 
     result = db.search(Query().id == unique_id)
     while len(result) > 0:
         unique_id = str(uuid.uuid4())[:4]
+
     data = {
         "id": unique_id.upper(),
         "giver": event.get_user_id(),
-        "meal_content": meal_string_info[0],
-        "shop": meal_string_info[1],
-        "platform": meal_string_info[2],
-        "est_arrival_time": datetime.timestamp(meal_string_info[3]),
-        "status": meal_string_info[4]
+        "meal_content": meal_string,
+        "order_time": datetime.timestamp(datetime.now()),
+        "est_arrival_time": est_arrival_time.timestamp(),
+        "status": "已下单"
     }
     db.insert(data)
-    img = Txt2Img(font_size)
-    pic = img.save("信息：", f"投喂成功！  ID: {unique_id.upper()}")
-    await ellyesmeal.finish(MessageSegment.image(pic))
+    await ellyesmeal.finish(to_img_msg(f"投喂成功！  ID: {unique_id.upper()}"))
 
 
-async def get_ellyes_meal(id):
-    bot = get_bot(str(id))
+async def get_ellyes_meal(id, day):
+    bot = get_bot()
     year = datetime.now().year
     month = datetime.now().month
     today = datetime.now().day
@@ -115,16 +150,35 @@ async def get_ellyes_meal(id):
     Mealdb = Query()
     meals = db.search((Mealdb.est_arrival_time > datetime.timestamp(
         datetime.now().replace(year=year, month=month, day=today-1, hour=23, minute=0, second=0))) | (Mealdb.status == "在吃"))
-    print(meals)
-    msg = ""
-    for meal in meals:
-        giver_info = await bot.get_group_member_info(group_id="367501912", user_id=meal["giver"])
-        giver_card = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
-        giver_card = str(giver_card)
-        msg += f"ID: {meal['id']} | 热心群友：{giver_card} | 内容: {meal['meal_content']} | 商家: {meal['shop']} | 平台：{meal['platform']} | 预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%m-%d %H:%M')} | 状态: {meal['status']}\n"
 
+    msg = ""
+    is_tmr_has_meal = False
+    start = time.time()
+    for meal in meals:
+        if day == "今天":
+            if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=0, second=0)):
+                is_tmr_has_meal = True
+                continue
+        elif day == "明天":
+            if meal['est_arrival_time'] < datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=0, second=0)):
+                continue
+        giver_card = await db_get_gminfo(meal['giver'])
+        if giver_card is None:
+            giver_info = await bot.get_group_member_info(group_id="367501912", user_id=meal["giver"])
+            giver_card = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
+            await db_set_gminfo(meal["giver"], giver_card)
+        else:
+            giver_card = giver_card.decode("utf-8")
+            logger.debug(f"read user card from cache succeed: {giver_card}")
+        giver_card = str(giver_card)
+        msg += f"ID: {meal['id']}    状态: {meal['status']}\n热心群友：{giver_card}({meal['giver']})\n内容: {meal['meal_content']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}"
+        msg += "\n--------------------\n"
+    end = time.time()
+    print("time spent: ", end - start)
     if msg == "":
-        msg = "怡宝今天还没有吃的！"
+        msg = f"怡宝{day}还没有吃的！"
+        if is_tmr_has_meal:
+            msg += "\n\n\n\n                   *但是明天有吃的"
     return msg
 
 
@@ -134,18 +188,26 @@ async def get_detailed_meal(id):
 
 
 async def get_ellyesmeal_help():
-    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃 外卖内容#商家名#点餐渠道(可省略)#预计送达时间#状态\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID#<状态>\n提示：外卖状态可为：未送达/xx号门xxx取件码/已送达之类，无格式限制。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>即可。\n⑤.删除自己发的外卖信息:\n发送删除外卖<ID>即可。"
+    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃 <外卖内容> <预计送达时间>\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID <状态>\n提示：怡批可修改的外卖状态为：配送中/已送达/在吃。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>;\n⑤.删除自己发的外卖信息:\n发送删除外卖 <ID>。"
 
 
 @update_meal_status.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
     sub_commands = str(args)
-    sub_commands = sub_commands.replace("＃", "#")
-    sub_commands = sub_commands.split("#")
+    sub_commands = sub_commands.split(" ")
     if len(sub_commands) != 2:
-        await update_meal_status.finish("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID#状态")
+        await update_meal_status.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID#状态"))
     meal_id = sub_commands[0].upper()
     meal_status = sub_commands[1]
+    if meal_status not in ["配送中", "已送达", "在吃"]:
+        if event.get_user_id() != list(global_config.superusers)[0]:
+            await update_meal_status.finish(to_img_msg("请在如下状态中选择：配送中/已送达/在吃，并重新发送命令。", "状态错误"))
+        else:
+            pass
     queried_meal = db.get(Query().id == meal_id)
     if queried_meal:
         if queried_meal["giver"] != event.get_user_id():
@@ -153,73 +215,90 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
                 await update_meal_status.finish("您配吗？")
         result = db.update({"status": meal_status}, Query().id == meal_id)
 
-        await update_meal_status.finish(f"外卖{meal_id}状态已更新为：{meal_status}")
+        await update_meal_status.finish(to_img_msg(f"外卖{meal_id}状态已更新为：{meal_status}"))
     else:
-        await update_meal_status.finish(f"外卖{meal_id}不存在！")
-
-
-@query_meal.handle()
-async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    bot_id = event.self_id
-    bot = get_bot(str(bot_id))
-    sub_commands = str(args).split("#")
-    meal = await get_detailed_meal(id=sub_commands[0].upper())
-    if len(sub_commands) == 2 and sub_commands[0] == "":
-        sub_commands.pop(0)
-    if len(sub_commands) != 1:
-        await query_meal.finish("格式错误，请重新按照如下格式发送信息：查询外卖<ID>")
-    if not meal:
-        await query_meal.finish(f"外卖{sub_commands[0]}不存在！")
-    giver_info = await bot.get_group_member_info(group_id="367501912", user_id=meal["giver"])
-    giver_card = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
-    giver_card = str(giver_card)
-    msg = f"ID: {meal['id']}\n热心群友：{giver_card}({meal['giver']})\n内容: {meal['meal_content']}\n商家: {meal['shop']}\n平台：{meal['platform']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}\n状态: {meal['status']}"
-    img = Txt2Img(font_size)
-    pic = img.save("信息：", msg)
-    await ellyesmeal.finish(MessageSegment.image(pic))
+        await update_meal_status.finish(to_img_msg(f"外卖{meal_id}不存在！"))
 
 
 @delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
     sub_commands = str(args)
-    sub_commands = sub_commands.replace("＃", "#")
-    sub_commands = sub_commands.split("#")
-    if len(sub_commands) == 2 and sub_commands[0] == "":
-        sub_commands.pop(0)
-    if len(sub_commands) != 1:
-        await delete_meal.finish("格式错误，请重新按照如下格式发送信息：删除外卖<ID>")
-    meal_id = sub_commands[0].upper()
+    if len(sub_commands) != 4:
+        await delete_meal.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：删除外卖 <ID>"))
+    meal_id = sub_commands.upper()
     sender = event.get_user_id()
     Mealdb = Query()
     result = db.remove((Mealdb.id == meal_id) & (Mealdb.giver == sender))
     print(result)
-    if result[0] > 0:
-        await delete_meal.finish(f"外卖{meal_id}已删除")
+    if len(result) > 0:
+        await delete_meal.finish(to_img_msg(f"外卖{meal_id}已删除"))
     else:
-        await delete_meal.finish(f"外卖{meal_id}不存在，或者你要删除的外卖不是你点的哦")
+        await delete_meal.finish(to_img_msg(f"外卖{meal_id}不存在，或者你要删除的外卖不是你点的哦"))
 
 
 @force_delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
     ids = str(args).split(" ")
+    if ids[0] == "全部":
+        year = datetime.now().year
+        month = datetime.now().month
+        today = datetime.now().day
+        if today == 1:
+            month = month - 1
+            if month == 0:
+                month = 12
+                year = year - 1
+            today = monthrange(year, month)[1] + 1
+        Mealdb = Query()
+        db.remove((Mealdb.est_arrival_time > datetime.timestamp(
+            datetime.now().replace(year=year, month=month, day=today-1, hour=23, minute=0, second=0))) | (Mealdb.status == "在吃"))
+        await force_delete_meal.finish(to_img_msg(f"全部外卖已删除"))
     for id in ids:
         db.remove(Query().id == id.upper())
-    await force_delete_meal.finish("已删除指定的外卖信息")
-
-
-@confirm_record.handle()
-async def _(event: GroupMessageEvent, msg: Message = EventMessage(), state: T_State = State()):
-    for seg in event.get_message():
-        print(seg)
+    await force_delete_meal.finish(to_img_msg("已删除指定的外卖信息"))
 
 
 @meal_howto.handle()
 async def _(event: GroupMessageEvent):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
     if not event.group_id == 367501912:
         await meal_howto.finish()
-    img = Txt2Img(font_size)
-    howto = "1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食饮品/甜食等，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
+    howto = "1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食（如肠粉）/饮品（半糖少冰）/甜食（要耐放）/水果（不要瓜类）等，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
     help = await get_ellyesmeal_help()
     howto += help
-    pic = img.save("投喂指南", howto)
-    await meal_howto.finish(MessageSegment.image(pic))
+    await meal_howto.finish(to_img_msg(howto, "投喂指南"))
+
+@mark_bad_ep.handle()
+async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    bes = await get_badep_status(event.user_id)
+    if bes:
+        logger.info(f"{event.user_id} is already marked as bad ep")
+        await ellyesmeal.finish()
+    args = str(args).split(" ")
+    timeset = args[0]
+    if timeset == "永久":
+        timeset = None
+    elif timeset.endswith("d"):
+        timeset = int(timeset[:-1]) * 24 * 60 * 60
+    elif timeset.endswith("h"):
+        timeset = int(timeset[:-1]) * 60 * 60
+    elif timeset.endswith("m"):
+        timeset = int(timeset[:-1]) * 60
+    for ms in event.get_message():
+        if ms.type == "at":
+            bad_ep = ms.data["qq"]
+            await db_set_badeps(bad_ep, timeset)
+    await mark_bad_ep.finish("ok")
+
+    
