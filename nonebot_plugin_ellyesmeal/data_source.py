@@ -6,6 +6,7 @@ global_config = get_driver().config
 redis_host = global_config.redis_host
 redis_pass = global_config.redis_pass
 
+hashdb = StrictRedis(host=redis_host, port=6379, db=4, password=redis_pass)
 r = StrictRedis(host=redis_host, port=6379, db=5, password=redis_pass)
 gep = StrictRedis(host=redis_host, port=6379, db=6, password=redis_pass)
 
@@ -29,3 +30,11 @@ async def get_goodep(user_id):
     user_id = str(user_id)
     time = gep.get(user_id)
     return time
+
+async def get_hash(id):
+    id_hash = hashdb.get(id)
+    return id_hash
+
+async def set_hash(id, hash):
+    id_hash = hashdb.set(id, hash)
+    return id_hash
