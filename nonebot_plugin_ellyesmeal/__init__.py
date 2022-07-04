@@ -63,7 +63,7 @@ async def get_goodep_status(id):
 @ellyesmeal.handle()
 async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
     command = command[0]
-    day = "今天" if command == "怡宝今天吃" else "明天"
+    day = "今天" if command.startswith("怡宝今天") else "明天"
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
         meals = await get_ellyes_meal(event.self_id, day)
@@ -246,7 +246,7 @@ async def get_detailed_meal(id):
 
 
 async def get_ellyesmeal_help():
-    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃 <外卖内容>【空格】<预计送达时间>\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID <状态>\n提示：怡批可修改的外卖状态为：配送中/已送达/在吃。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>;\n⑤.删除自己发的外卖信息:\n发送删除外卖 <ID>。"
+    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃/喝什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃/喝 <外卖内容>【空格】<预计送达时间>\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID <状态>\n提示：怡批可修改的外卖状态为：配送中/已送达/在吃。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>;\n⑤.删除自己发的外卖信息:\n发送删除外卖 <ID>。"
 
 
 @update_meal_status.handle()
