@@ -1,12 +1,15 @@
-import hashlib
 from typing import Tuple
 from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, MessageSegment, Bot, Event
 from nonebot.typing import T_State
 from nonebot.params import State, CommandArg, Command
-from nonebot.permission import SUPERUSER, Permission
+from nonebot.permission import SUPERUSER
 from nonebot import get_bot, get_driver
 from nonebot import on_command
 from nonebot.log import logger
+
+from nonebot import require
+require("nonebot_plugin_apscheduler")
+from nonebot_plugin_apscheduler import scheduler
 
 from nonebot_plugin_txt2img import Txt2Img
 
@@ -65,29 +68,33 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
         meals = await get_ellyes_meal(event.self_id, day)
         await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
-    if len(sub_commands) == 1 and sub_commands[0] == "什么帮助":
+    elif len(sub_commands) == 2 and sub_commands[0] == "什么" and sub_commands[1] == "-a":
+        meals = await get_ellyes_meal(event.self_id, day, show_all=True)
+        await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
+    elif len(sub_commands) == 1 and sub_commands[0] == "什么帮助":
         help = await get_ellyesmeal_help()
         await ellyesmeal.finish(to_img_msg(help, "帮助"))
-    if len(sub_commands) > 1 and sub_commands[1] == "帮助":
+    elif len(sub_commands) > 1 and sub_commands[1] == "帮助":
         help = await get_ellyesmeal_help()
         await ellyesmeal.finish(to_img_msg(help, "帮助"))
-    ges = await get_goodep_status(event.user_id)
-    state["is_auto_good_ep"] = False
-    if not ges:
-        nickname = await bot.get_group_member_info(group_id=event.group_id, user_id=event.user_id)
-        nickname = nickname["card"] or nickname["nickname"] or nickname["user_id"]
-        if "怡宝" in nickname or ep_pat.search(nickname):
-            logger.info("auto good ep marked")
-            state["is_hidden"] = False
-            state["is_auto_good_ep"] = True
-        else:
-            logger.info(
-                f"{event.user_id} is not marked as good ep, marked as hidden.")
-            state["is_hidden"] = True
     else:
-        state["is_hidden"] = False
-    state["day"] = day
-    state["meal_string_data"] = sub_commands
+        ges = await get_goodep_status(event.user_id)
+        state["is_auto_good_ep"] = False
+        if not ges:
+            nickname = await bot.get_group_member_info(group_id=event.group_id, user_id=event.user_id)
+            nickname = nickname["card"] or nickname["nickname"] or nickname["user_id"]
+            if "怡宝" in nickname or ep_pat.search(nickname):
+                logger.info("auto good ep marked")
+                state["is_hidden"] = False
+                state["is_auto_good_ep"] = True
+            else:
+                logger.info(
+                    f"{event.user_id} is not marked as good ep, marked as hidden.")
+                state["is_hidden"] = True
+        else:
+            state["is_hidden"] = False
+        state["day"] = day
+        state["meal_string_data"] = sub_commands
 
 
 @ellyesmeal.got("meal_string_data")
@@ -101,6 +108,8 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
 
     meal_string = meal_string.strip()
     if meal_string == "":
+        await ellyesmeal.finish()
+    if meal_string.endswith(("?", "？")):
         await ellyesmeal.finish()
     if not zh_pat.search(meal_string):
         await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "卑鄙的"))
@@ -163,14 +172,14 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
     }
     db.insert(data)
     if state["is_hidden"]:
-        await ellyesmeal.finish(to_img_msg(f"投喂成功，但由于您暂未通过优质怡批认证，暂时隐藏。\n  ID: {unique_id.upper()}"))
+        await ellyesmeal.finish(to_img_msg(f"投喂成功，但由于您暂未通过优质怡批认证，暂时隐藏。\nID: {unique_id.upper()}"))
     elif state["is_auto_good_ep"]:
-        await ellyesmeal.finish(to_img_msg(f"投喂成功，由于您的群名片符合规范，自动认证为优质怡批。\n  ID: {unique_id.upper()}"))
+        await ellyesmeal.finish(to_img_msg(f"投喂成功，由于您的群名片符合规范，自动认证为优质怡批。\nID: {unique_id.upper()}"))
     else:
         await ellyesmeal.finish(to_img_msg(f"投喂成功！  ID: {unique_id.upper()}"))
 
 
-async def get_ellyes_meal(id, day):
+async def get_ellyes_meal(id, day, show_all=False):
     bot = get_bot()
     year = datetime.now().year
     month = datetime.now().month
@@ -190,7 +199,7 @@ async def get_ellyes_meal(id, day):
     is_tmr_has_meal = False
     start = time.time()
     for meal in meals:
-        if meal["status"] == "已隐藏":
+        if meal["status"] == "已隐藏" and not show_all:
             continue
         if day == "今天":
             if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=0, second=0)):
@@ -209,6 +218,18 @@ async def get_ellyes_meal(id, day):
             logger.debug(f"read user card from cache succeed: {giver_card}")
         giver_card = str(giver_card)
         msg += f"ID: {meal['id']}    状态: {meal['status']}\n热心群友：{giver_card}({meal['giver']})\n内容: {meal['meal_content']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}"
+        if meal["is_auto_good_ep"]:
+            left_time = datetime.fromtimestamp(meal['order_time']) + timedelta(hours=3) - datetime.now()
+            if left_time < timedelta(seconds=0):
+                await clean_fake_meals()    
+            else:
+                msg += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
+        elif meal["status"] == "已隐藏":
+            left_time = datetime.fromtimestamp(meal['order_time']) + timedelta(hours=2) - datetime.now()
+            if left_time < timedelta(seconds=0):
+                await clean_fake_meals()    
+            else:
+                msg += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         msg += "\n--------------------\n"
     end = time.time()
     print("time spent: ", end - start)
@@ -266,7 +287,6 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     sender = event.get_user_id()
     Mealdb = Query()
     result = db.remove((Mealdb.id == meal_id) & (Mealdb.giver == sender))
-    print(result)
     if len(result) > 0:
         await delete_meal.finish(to_img_msg(f"外卖{meal_id}已删除"))
     else:
@@ -308,12 +328,20 @@ async def _(event: GroupMessageEvent):
 @mark_good_ep.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     is_have_result = False
+    Meal = Query()
     for ms in event.get_message():
         if ms.type == "at":
             is_have_result = True
             good_ep = ms.data["qq"]
+            db.update(Meal.is_auto_good_ep == False, (Meal.giver == good_ep))
             await db_set_goodeps(good_ep, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     if is_have_result:
         await mark_good_ep.finish("ok")
     else:
         await mark_good_ep.finish("failed")
+
+@scheduler.scheduled_job("interval", minutes=5)
+async def clean_fake_meals():
+    Mealdb = Query()
+    db.remove((Mealdb.status == "已隐藏") & (Mealdb.order_time < datetime.timestamp(datetime.now() - timedelta(hours=2))))
+    db.remove((Mealdb.is_auto_good_ep == True) & (Mealdb.order_time < datetime.timestamp(datetime.now() - timedelta(hours=3))))
