@@ -6,6 +6,7 @@ authors = ["Maximilian Wu <me@maxng.cc>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+pymongo = "^4.1.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
