@@ -16,6 +16,7 @@ from nonebot_plugin_txt2img import Txt2Img
 
 from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
 from .data_source import set_goodeps as db_set_goodeps, get_goodep as db_get_goodep
+from .auth_ep import check_auto_good_ep
 
 import re
 import uuid
@@ -36,10 +37,7 @@ config_dir = "/home/maxesisn/botData/misc_data"
 
 zh_pat = re.compile(r"[\u4e00-\u9fa5]")
 
-ep_pat_1 = re.compile(r"^e.{1,3}q$")
-ep_pat_2 = re.compile(r"^怡批(1\d{4}|20000)号$")
-
-
+id_pat = re.compile(r"^[A-Za-z0-9]*$")
 
 async def ELLYE(bot: Bot, event: Event) -> bool:
     return event.get_user_id() == "491673070"
@@ -90,7 +88,7 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         if not ges:
             nickname = await bot.get_group_member_info(group_id=event.group_id, user_id=event.user_id)
             nickname = nickname["card"] or nickname["nickname"] or nickname["user_id"]
-            if ep_pat_1.search(nickname) or ep_pat_2.search(nickname):
+            if await check_auto_good_ep(event.user_id, nickname):
                 logger.info("auto good ep marked")
                 state["is_hidden"] = False
                 state["is_auto_good_ep"] = True
@@ -109,6 +107,7 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
 @ellyesmeal.got("meal_string_data")
 async def _(event: GroupMessageEvent, state: T_State = State()):
     meal_string_data: list[str] = state["meal_string_data"]
+
     day = state["day"]
     meal_string = "".join(meal_string_data)
 
@@ -128,6 +127,7 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
         await ellyesmeal.finish(to_img_msg("怡宴丁真，鉴定为假", "虚伪的"))
 
     est_arrival_time = meal_string_data[-1]
+    est_arrival_time = re.sub(r'[^\w]', '', est_arrival_time)
     est_arrival_time = est_arrival_time.replace("：", ":").replace(":", "")
     is_tomorrow = True if day == "明天" else False
     is_time_recorded = True
@@ -145,7 +145,10 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
         else:
             minute = int(est_arrival_time % 100)
             hour = int(est_arrival_time / 100)
-            est_arrival_time = datetime.now().replace(hour=hour, minute=minute)
+            if minute > 59 or hour > 23:
+                is_time_recorded = False
+            else:
+                est_arrival_time = datetime.now().replace(hour=hour, minute=minute)
 
     # 处理没有指定时间的情况
     else:
@@ -168,7 +171,7 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
 
     if is_time_recorded:
         meal_string_data = meal_string_data[:-1]
-    meal_string = "+".join(meal_string_data)
+    meal_string = "+".join(meal_string_data).strip()
 
     while True:
         unique_id = str(uuid.uuid4())[:4]
@@ -291,8 +294,8 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
         await update_meal_status.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID 状态"))
     meal_ids = list()
     for sub in sub_commands:
-        if len(sub) == 4:
-            meal_ids.append(sub)
+        if len(sub) == 4 and re.search(id_pat, sub):
+            meal_ids.append(sub.upper())
     meal_status = sub_commands[-1]
 
     privilledged_users = [list(global_config.superusers)[0], "491673070"]
@@ -328,7 +331,7 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     sub_commands = str(args).split(" ")
     msg = ""
     for meal_id in sub_commands:
-        if len(meal_id) != 4:
+        if len(meal_id) != 4 or not re.search(id_pat, meal_id):
             await delete_meal.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：删除外卖 <ID>【四位字母/数字】"))
         meal_id = meal_id.upper()
         msg += f"外卖{meal_id}: "
@@ -374,7 +377,7 @@ async def _(event: GroupMessageEvent):
 -----
 3.你应该在什么时间投喂：
 工作日早10点至下午3点，地址为公司地址；
-工作日晚9点至早7点，地址为公寓地址；
+工作日晚9点至早8点，地址为公寓地址；
 休息日全天均为公寓地址。
 -----
 4.你应该如何记录给怡宝点的外卖：'''
