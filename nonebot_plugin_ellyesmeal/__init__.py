@@ -28,7 +28,7 @@ global_config = get_driver().config
 
 font_size = 32
 
-blacklist = ["114514", "昏睡", "田所", "查理酱", "[CQ:", "&#91;CQ:"]
+blacklist = ["114514", "昏睡", "田所", "牛子", "老八", "查理酱", "怡宝", "咖啡佬", "[CQ:", "&#91;CQ:"]
 
 
 config_dir = "/home/maxesisn/botData/misc_data"
@@ -36,18 +36,20 @@ config_dir = "/home/maxesisn/botData/misc_data"
 
 zh_pat = re.compile(r"[\u4e00-\u9fa5]")
 
-ep_pat = re.compile(r"^e.{1,3}q$")
+ep_pat_1 = re.compile(r"^e.{1,3}q$")
+ep_pat_2 = re.compile(r"^怡批(1\d{4}|20000)号$")
+
 
 
 async def ELLYE(bot: Bot, event: Event) -> bool:
     return event.get_user_id() == "491673070"
 
-ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝"})
-update_meal_status = on_command("更新外卖状态", aliases={"修改外卖状态", "标记外卖"})
+ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
+update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖"})
 delete_meal = on_command("删除外卖")
 force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER | ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"})
-mark_good_ep = on_command("标记优质怡批", permission=SUPERUSER)
+mark_good_ep = on_command("标记优质怡批", permission=SUPERUSER | ELLYE)
 card_changed = on_notice()
 
 def to_img_msg(content, title="信息"):
@@ -64,14 +66,18 @@ async def get_goodep_status(id):
 @ellyesmeal.handle()
 async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
     command = command[0]
-    day = "今天" if command.startswith("怡宝今天") else "明天"
+    day = command[2:4]
     sub_commands = str(args).split(" ")
     if len(sub_commands) == 1 and sub_commands[0] == "什么":
         meals = await get_ellyes_meal(event.self_id, day)
         await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
     elif len(sub_commands) == 2 and sub_commands[0] == "什么" and sub_commands[1] == "-a":
-        meals = await get_ellyes_meal(event.self_id, day, show_all=True)
-        await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
+        if await SUPERUSER(event) or await ELLYE(event):
+            meals = await get_ellyes_meal(event.self_id, day, show_all=True)
+            await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
+        else:
+            meals = await get_ellyes_meal(event.self_id, day)
+            await ellyesmeal.finish(to_img_msg(meals, f"怡宝{day}的菜单"))
     elif len(sub_commands) == 1 and sub_commands[0] == "什么帮助":
         help = await get_ellyesmeal_help()
         await ellyesmeal.finish(to_img_msg(help, "帮助"))
@@ -84,7 +90,7 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         if not ges:
             nickname = await bot.get_group_member_info(group_id=event.group_id, user_id=event.user_id)
             nickname = nickname["card"] or nickname["nickname"] or nickname["user_id"]
-            if "怡宝" in nickname or ep_pat.search(nickname):
+            if ep_pat_1.search(nickname) or ep_pat_2.search(nickname):
                 logger.info("auto good ep marked")
                 state["is_hidden"] = False
                 state["is_auto_good_ep"] = True
@@ -94,6 +100,8 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
                 state["is_hidden"] = True
         else:
             state["is_hidden"] = False
+        if day == "昨天":
+                await ellyesmeal.finish(to_img_msg("别在这里捣乱！", "丁真的"))
         state["day"] = day
         state["meal_string_data"] = sub_commands
 
@@ -123,6 +131,12 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
     est_arrival_time = est_arrival_time.replace("：", ":").replace(":", "")
     is_tomorrow = True if day == "明天" else False
     is_time_recorded = True
+
+    if est_arrival_time.endswith(("送达", "送到")):
+        est_arrival_time = est_arrival_time[:-2]
+    if est_arrival_time.endswith("到"):
+        est_arrival_time = est_arrival_time[:-1]
+
     # 判断时间是否为 HHMM 格式
     if est_arrival_time.isdigit():
         est_arrival_time = int(est_arrival_time)
@@ -206,9 +220,15 @@ async def get_ellyes_meal(id, day, show_all=False):
             if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=59, second=0)):
                 is_tmr_has_meal = True
                 continue
+            if meal['est_arrival_time'] < datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=0, minute=0, second=0)) and meal['status'] != "在吃":
+                continue
         elif day == "明天":
             if meal['est_arrival_time'] < datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=59, second=0)):
                 continue
+        elif day == "昨天":
+            if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=0, minute=0, second=0)):
+                continue
+        
         giver_card = await db_get_gminfo(meal['giver'])
         if giver_card is None:
             try:
@@ -245,17 +265,35 @@ async def get_ellyes_meal(id, day, show_all=False):
 
 
 async def get_ellyesmeal_help():
-    return "①.查询怡宝收到的外卖:\n发送`怡宝今天吃/喝什么`可查询今天已经点给怡宝的外卖.\n②.使用本插件记录给怡宝点的外卖:\n请按照如下格式发送命令：怡宝今天吃/喝 <外卖内容>【空格】<预计送达时间>\n③.更新外卖状态:\n发送：更新外卖状态 外卖ID <状态>\n提示：怡批可修改的外卖状态为：配送中/已送达/在吃。\n④.查询单个外卖的详细信息:\n发送查询外卖 <ID>;\n⑤.删除自己发的外卖信息:\n发送删除外卖 <ID>。"
+    return '''
+①.查询怡宝收到的外卖:
+发送: 怡宝[昨/今/明]天[吃/喝]什么
+②.使用本插件记录给怡宝点的外卖:
+按如下格式发送命令: 
+   怡宝[今/明]天[吃/喝] <外卖内容>【空格】<预计送达时间>
+③.更新外卖状态:
+发送: 更新外卖状态 外卖ID <状态>
+提示: 怡批可修改的外卖状态为：配送中/已送达/在吃
+      怡宝可额外修改的外卖状态为：吃完了/扔了/退了
+④.查询单个外卖的详细信息:
+发送: 查询外卖 <ID>
+⑤.删除自己发的外卖信息:
+发送: 删除外卖 <ID>
+'''
+
 
 
 @update_meal_status.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     sub_commands = str(args)
     sub_commands = sub_commands.split(" ")
-    if len(sub_commands) != 2:
-        await update_meal_status.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID#状态"))
-    meal_id = sub_commands[0].upper()
-    meal_status = sub_commands[1]
+    if len(sub_commands) < 2:
+        await update_meal_status.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：更新外卖状态 外卖ID 状态"))
+    meal_ids = list()
+    for sub in sub_commands:
+        if len(sub) == 4:
+            meal_ids.append(sub)
+    meal_status = sub_commands[-1]
 
     privilledged_users = [list(global_config.superusers)[0], "491673070"]
     is_priviledged = True if event.get_user_id() in privilledged_users else False
@@ -266,36 +304,44 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     if (meal_status not in ["配送中", "已送达", "在吃", "吃完了", "扔了", "退了"]) and is_priviledged:
         await update_meal_status.finish(to_img_msg("您只能在如下状态中选择：配送中/已送达/在吃/吃完了/扔了/退了", "状态错误"))
 
-    queried_meal = await get_exact_meal(meal_id)
-    if queried_meal:
-        if queried_meal["giver"] != event.get_user_id():
-            if not is_priviledged:
-                await update_meal_status.finish("您配吗？")
-        if queried_meal["status"] == "已隐藏":
-            await update_meal_status.finish("该外卖已被隐藏，无法修改状态。")
-        if (queried_meal["status"] in ["吃完了", "扔了", "退了"]) and not is_priviledged:
-            await update_meal_status.finish("该外卖生命周期已结束，无法修改状态。")
-        result = await update_exact_meal(meal_id, "status", meal_status)
-        await update_meal_status.finish(to_img_msg(f"外卖{meal_id}状态已更新为：{meal_status}"))
-    else:
-        await update_meal_status.finish(to_img_msg(f"外卖{meal_id}不存在！"))
+    msg = ""
+    for meal_id in meal_ids:
+        msg += f"外卖{meal_id}: "
+        queried_meal = await get_exact_meal(meal_id)
+        if queried_meal:
+            if queried_meal["giver"] != event.get_user_id() and not is_priviledged:
+                msg += "权限不足，无法更新状态\n"
+            elif queried_meal["status"] == "已隐藏":
+                msg += "该外卖已被隐藏，无法更新状态\n"
+            elif (queried_meal["status"] in ["吃完了", "扔了", "退了"]) and not is_priviledged:
+                msg += "该外卖生命周期已结束，无法修改状态\n"
+            else:
+                result = await update_exact_meal(meal_id, "status", meal_status)
+                msg += f"状态已更新为：{meal_status}\n"
+        else:
+            msg += "外卖不存在\n"
+    await update_meal_status.finish(to_img_msg(msg))
 
 
 @delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
-    sub_commands = str(args)
-    if len(sub_commands) != 4:
-        await delete_meal.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：删除外卖 <ID>"))
-    meal_id = sub_commands.upper()
-    sender = event.get_user_id()
+    sub_commands = str(args).split(" ")
+    msg = ""
+    for meal_id in sub_commands:
+        if len(meal_id) != 4:
+            await delete_meal.finish(to_img_msg("格式错误，请重新按照如下格式发送信息：删除外卖 <ID>【四位字母/数字】"))
+        meal_id = meal_id.upper()
+        msg += f"外卖{meal_id}: "
+        sender = event.get_user_id()
 
-    result = await del_exact_meal(meal_id, "giver", sender)
+        result = await del_exact_meal(meal_id, "giver", sender)
 
-    if result:
-        await delete_meal.finish(to_img_msg(f"外卖{meal_id}已删除"))
-    else:
-        await delete_meal.finish(to_img_msg(f"外卖{meal_id}不存在，或者你要删除的外卖不是你点的哦。"))
+        if result.deleted_count:
+            msg += "已删除\n"
+        else:
+            msg += f"外卖不存在，或者你要删除的外卖不是你点的哦\n"
 
+    await delete_meal.finish(to_img_msg(msg))
 
 @force_delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
@@ -309,7 +355,29 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 async def _(event: GroupMessageEvent):
     # if not event.group_id == 367501912:
     #     await meal_howto.finish()
-    howto = "0.只有经过认证的怡批才可以使用本插件记录。\n认证方式：给怡宝点一份外卖，并发送订单截图至群内，经怡宝认可后便可获得优质怡批认证。\n或者效仿群内怡批更改群名片，符合某种命名规则的将被自动视为优质怡批。\n1.你需要填写怡宝的收货信息：\n收件人：陈泓仰 【女士】\n手机：19121671082\n地址：广东省深圳市南山区泊寓深圳（科技园店） \n   即【广东省深圳市南山区北环大道10092号】\n2.你应该给怡宝投喂什么：\n为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食（如肠粉）/饮品（半糖少冰）/甜食（要耐放）/水果（不要瓜类）等，价格保持在20-30元左右以提升怡宝的好感度。\n3.你应该如何记录给怡宝点的外卖：\n"
+    howto = '''
+0.只有经过认证的优质怡批才可以使用本插件记录。
+认证方式：给怡宝点一份外卖，并发送订单截图至群内，经怡宝认可后便可获得优质怡批认证。
+或者效仿群内怡批更改群名片，符合某种神秘命名规则的将被自动视为优质怡批。
+-----
+1.你需要填写怡宝的收货信息：
+收件人：陈泓仰 【女士】
+手机：19121671082
+[公寓地址]
+   广东省深圳市南山区泊寓深圳（科技园店）
+即【广东省深圳市南山区北环大道10092号】
+[公司地址]
+   广东省深圳市创益科技大厦美团外卖柜 
+-----
+2.你应该给怡宝投喂什么：
+为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食（如肠粉）/饮品（半糖少冰）/甜食（要耐放）/水果（不要瓜类）等，价格保持在20-30元左右以提升怡宝的好感度。
+-----
+3.你应该在什么时间投喂：
+工作日早10点至下午3点，地址为公司地址；
+工作日晚9点至早7点，地址为公寓地址；
+休息日全天均为公寓地址。
+-----
+4.你应该如何记录给怡宝点的外卖：'''
     help = await get_ellyesmeal_help()
     howto += help
     await meal_howto.finish(to_img_msg(howto, "投喂指南"))
