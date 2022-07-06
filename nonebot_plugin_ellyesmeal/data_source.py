@@ -1,26 +1,12 @@
 from calendar import monthrange
-from unittest import result
-from pymongo import MongoClient
 
-from nonebot import get_driver
 from nonebot.log import logger
+
+from .auth_ep import receive_greyed_users
 
 from datetime import datetime, timedelta
 
-
-
-global_config = get_driver().config
-
-mongo_host = global_config.mongo_host
-mongo_user = global_config.mongo_user
-mongo_pass = global_config.mongo_pass
-
-client = MongoClient(f'mongodb://{mongo_user}:{mongo_pass}@{mongo_host}:27017/')
-me_data = client.me_data
-
-meals_data = me_data.meals
-whitelist_data = me_data.whitelist
-cards_data = me_data.cards
+from.mongo_source import meals_data, whitelist_data, cards_data
 
 
 async def get_gm_info(user_id):
@@ -109,7 +95,12 @@ async def del_exact_meal(id, k=None, v=None):
     if k is not None:
         result = meals_data.delete_one({'id': id, k: v})
     else:
-        result = meals_data.delete_one({'id': id})
+        # 是强制删除的情况
+        result = meals_data.find_one({'id': id})
+        if result:
+            await receive_greyed_users([result['giver']])
+            meals_data.delete_one({'_id': result['_id']})
+            logger.info(f'外卖{id}被强制删除')
     return result
 
 
@@ -120,10 +111,10 @@ async def update_autoep_status(id, status):
     return result
 
 
-async def db_clean_fake_meals():
-    timer_for_hidden = datetime.timestamp(datetime.now() - timedelta(hours=2))
-    timer_for_autoep = datetime.timestamp(datetime.now() - timedelta(hours=3))
-    result_hidden = meals_data.delete_many({
+async def db_clean_fake_meals(force=False):
+    timer_for_hidden = datetime.timestamp(datetime.now() - timedelta(hours=2)) if not force else 4102444799
+    timer_for_autoep = datetime.timestamp(datetime.now() - timedelta(hours=3)) if not force else 4102444799
+    result_hidden = meals_data.find({
         "$and": [
             {
                 "status": "已隐藏"
@@ -133,9 +124,14 @@ async def db_clean_fake_meals():
             }
         ]
     })
-    if result_hidden.deleted_count > 0:
-        logger.info(f'已隐藏的外卖被删除了{result_hidden.deleted_count}个')
-    result_autoep = meals_data.delete_many({
+    greyed_users = list()
+    for result in result_hidden:
+        greyed_users.append(result['giver'])
+        logger.info(f'外卖{result["id"]}因被隐藏+超时被删除')
+        meals_data.delete_one({'_id': result['_id']})
+        
+        
+    result_autoep = meals_data.find({
         "$and": [
             {
                 "is_auto_good_ep": True
@@ -145,6 +141,10 @@ async def db_clean_fake_meals():
             }
         ]
     })
-    if result_autoep.deleted_count > 0:
-        logger.info(f'带有自动标记的外卖被删除了{result_autoep.deleted_count}个')
-    return True
+    for result in result_autoep:
+        greyed_users.append(result['giver'])
+        logger.info(f'外卖{result["id"]}因被自动标记失效+超时被删除')
+        meals_data.delete_one({'_id': result['_id']})
+
+    if greyed_users:
+        await receive_greyed_users(greyed_users)

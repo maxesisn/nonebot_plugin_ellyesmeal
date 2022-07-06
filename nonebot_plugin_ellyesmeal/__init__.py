@@ -16,7 +16,7 @@ from nonebot_plugin_txt2img import Txt2Img
 
 from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
 from .data_source import set_goodeps as db_set_goodeps, get_goodep as db_get_goodep
-from .auth_ep import check_auto_good_ep
+from .auth_ep import check_auto_good_ep, clean_greyed_user
 
 import re
 import uuid
@@ -48,6 +48,7 @@ delete_meal = on_command("删除外卖")
 force_delete_meal = on_command("强制删除外卖", permission=SUPERUSER | ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"})
 mark_good_ep = on_command("标记优质怡批", permission=SUPERUSER | ELLYE)
+force_gc_meal = on_command("外卖gc", permission=SUPERUSER | ELLYE)
 card_changed = on_notice()
 
 def to_img_msg(content, title="信息"):
@@ -88,10 +89,14 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         if not ges:
             nickname = await bot.get_group_member_info(group_id=event.group_id, user_id=event.user_id)
             nickname = nickname["card"] or nickname["nickname"] or nickname["user_id"]
-            if await check_auto_good_ep(event.user_id, nickname):
+            ages = await check_auto_good_ep(event.user_id, nickname)
+            if ages == 0:
                 logger.info("auto good ep marked")
                 state["is_hidden"] = False
                 state["is_auto_good_ep"] = True
+            elif ages == 2:
+                logger.info("griefer marked")
+                await ellyesmeal.finish(to_img_msg("由于你的劣迹过多，在被正式认证为优质怡批前无法再投喂。", "恶意的"))
             else:
                 logger.info(
                     f"{event.user_id} is not marked as good ep, marked as hidden.")
@@ -394,7 +399,9 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
             is_have_result = True
             good_ep = ms.data["qq"]
             await update_autoep_status(good_ep, False)
-            await db_set_goodeps(good_ep, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            await db_set_goodeps(good_ep, datetime.now())
+            await clean_greyed_user(good_ep)
+
     if is_have_result:
         await mark_good_ep.finish("ok")
     else:
@@ -408,6 +415,10 @@ async def _(event: Event):
         await card_changed.finish()
     await db_set_gminfo(event.user_id, event.card_new)
 
+@force_gc_meal.handle()
+async def _():
+    await db_clean_fake_meals(force=True)
+    await force_gc_meal.finish("ok")
 
 @scheduler.scheduled_job("interval", minutes=5)
 async def clean_fake_meals():
