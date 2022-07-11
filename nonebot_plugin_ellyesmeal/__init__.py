@@ -46,8 +46,7 @@ async def ellye_group_checker(event: GroupMessageEvent) -> bool:
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
-ellyesmeal_in_2days = on_command("怡宝这两天吃什么", aliases={"怡宝这两天喝什么", "怡宝这两天吃了什么", "怡宝这两天喝了什么"})
-ellyesmeal_in_3days = on_command("怡宝这三天吃什么", aliases={"怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这三天喝了什么"})
+ellyesmeal_in_xdays = on_command("怡宝这两天吃什么", aliases={"怡宝这两天喝什么", "怡宝这两天吃了什么", "怡宝这两天喝了什么", "怡宝这三天吃什么" , "怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这三天喝了什么"})
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
@@ -148,11 +147,13 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         state["day"] = day
         state["meal_string_data"] = sub_commands
 
-@ellyesmeal_in_2days.handle()
+@ellyesmeal_in_xdays.handle()
 async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
-    await check_real_bad_ep(matcher=ellyesmeal_in_2days, bot=bot, event=event)
+    await check_real_bad_ep(matcher=ellyesmeal_in_xdays, bot=bot, event=event)
+    command = command[0]
+    day = command[2:5]
     start_1 = time.time()
-    meals = await get_ellyes_meal(event.self_id, day="这两天")
+    meals = await get_ellyes_meal(event.self_id, day=day)
     msg = await to_img_msg(meals, f"怡宝这两天的菜单")
     start_2 = time.time()
     await ellyesmeal.send(msg)
@@ -161,18 +162,6 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
     logger.debug(f"send msg cost: {end - start_2}")
     await ellyesmeal.finish()
 
-@ellyesmeal_in_3days.handle()
-async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
-    await check_real_bad_ep(matcher=ellyesmeal_in_3days, bot=bot, event=event)
-    start_1 = time.time()
-    meals = await get_ellyes_meal(event.self_id, day="这三天")
-    msg = await to_img_msg(meals, f"怡宝这三天的菜单")
-    start_2 = time.time()
-    await ellyesmeal.send(msg)
-    end = time.time()
-    logger.debug(f"generate msg cost: {start_2 - start_1}")
-    logger.debug(f"send msg cost: {end - start_2}")
-    await ellyesmeal.finish()
 
 
 @ellyesmeal.got("meal_string_data")
