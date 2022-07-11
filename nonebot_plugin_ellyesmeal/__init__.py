@@ -2,10 +2,10 @@ from typing import Tuple
 from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, Bot, Event, MessageSegment
 from nonebot.adapters.onebot.exception import ActionFailed
 from nonebot.typing import T_State
-from nonebot.params import State, CommandArg, Command
+from nonebot.params import State, CommandArg, Command, RegexGroup
 from nonebot.permission import SUPERUSER, Permission
 from nonebot import get_bot, get_driver
-from nonebot import on_command, on_notice
+from nonebot import on_command, on_notice, on_regex
 from nonebot.rule import to_me, Rule
 from nonebot.log import logger
 
@@ -44,9 +44,10 @@ async def ellye_group_checker(event: GroupMessageEvent) -> bool:
     return str(event.group_id) == "367501912"
 
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
+eg_rule = Rule(ellye_group_checker)
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
-ellyesmeal_in_xdays = on_command("怡宝这两天吃什么", aliases={"怡宝这两天喝什么", "怡宝这两天吃了什么", "怡宝这两天喝了什么", "怡宝这三天吃什么" , "怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这三天喝了什么"})
+ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么")
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
@@ -148,13 +149,18 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         state["meal_string_data"] = sub_commands
 
 @ellyesmeal_in_xdays.handle()
-async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, rg = RegexGroup()):
     await check_real_bad_ep(matcher=ellyesmeal_in_xdays, bot=bot, event=event)
-    command = command[0]
-    day = command[2:5]
+    rg = list(rg)
+    day = rg[0]
+    match day:
+        case "两":
+            day = "这两天"
+        case "三":
+            day = "这三天"
     start_1 = time.time()
     meals = await get_ellyes_meal(event.self_id, day=day)
-    msg = await to_img_msg(meals, f"怡宝这两天的菜单")
+    msg = await to_img_msg(meals, f"怡宝{day}的菜单")
     start_2 = time.time()
     await ellyesmeal.send(msg)
     end = time.time()
@@ -399,8 +405,7 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
             meal_ids.append(sub.upper())
     meal_status = sub_commands[-1]
 
-    privilledged_users = [list(global_config.superusers)[0], "491673070"]
-    is_priviledged = True if event.get_user_id() in privilledged_users else False
+    is_priviledged = await SU_OR_ELLYE(bot, event)
 
     if (meal_status not in ["配送中", "已送达", "在吃"]) and (not is_priviledged):
         await update_meal_status.finish(await to_img_msg("怡批只能在如下状态中选择：配送中/已送达/在吃", "权限不足"))
