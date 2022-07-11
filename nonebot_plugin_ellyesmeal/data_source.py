@@ -6,7 +6,7 @@ from .auth_ep import receive_greyed_users
 
 from datetime import datetime, timedelta
 
-from.mongo_source import meals_data, whitelist_data, cards_data
+from .mongo_source import meals_data, whitelist_data, cards_data
 
 
 async def get_gm_info(user_id):
@@ -93,13 +93,17 @@ async def update_exact_meal(id, k, v):
 async def del_exact_meal(id, k=None, v=None):
     id = str(id)
     if k is not None:
-        result = meals_data.delete_one({'id': id, k: v})
+        result = meals_data.find_one({'id': id})
+        if result[k] == v:
+            result = meals_data.update_one({'id': id}, {"$set": {'status': '已删除'}})
+        else:
+            result = None
     else:
         # 是强制删除的情况
         result = meals_data.find_one({'id': id})
         if result:
             await receive_greyed_users([result['giver']])
-            meals_data.delete_one({'_id': result['_id']})
+            meals_data.update_one({'id': id}, {"$set": {'status': '已删除'}})
             logger.info(f'外卖{id}被强制删除')
     return result
 
@@ -128,7 +132,7 @@ async def db_clean_fake_meals(force=False):
     for result in result_hidden:
         greyed_users.append(result['giver'])
         logger.info(f'外卖{result["id"]}因被隐藏+超时被删除')
-        meals_data.delete_one({'_id': result['_id']})
+        meals_data.update_one({'_id': result['_id']}, {"$set": {'status': '已删除'}})
         
         
     result_autoep = meals_data.find({
@@ -144,7 +148,7 @@ async def db_clean_fake_meals(force=False):
     for result in result_autoep:
         greyed_users.append(result['giver'])
         logger.info(f'外卖{result["id"]}因被自动标记失效+超时被删除')
-        meals_data.delete_one({'_id': result['_id']})
+        meals_data.update_one({'_id': result['_id']}, {"$set": {'status': '已删除'}})
 
     if greyed_users:
         await receive_greyed_users(greyed_users)

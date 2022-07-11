@@ -6,7 +6,7 @@ from nonebot.params import State, CommandArg, Command
 from nonebot.permission import SUPERUSER
 from nonebot import get_bot, get_driver
 from nonebot import on_command, on_notice
-from nonebot.rule import to_me
+from nonebot.rule import to_me, Rule
 from nonebot.log import logger
 
 from nonebot import require
@@ -41,6 +41,15 @@ id_pat = re.compile(r"^[A-Za-z0-9]*$")
 async def ELLYE(bot: Bot, event: Event) -> bool:
     return event.get_user_id() == "491673070"
 
+async def cc_notice_checker(event: Event) -> bool:
+    return event.get_event_name() == "notice.group_card"
+
+async def ellye_group_checker(event: Event) -> bool:
+    return event.get_group_id() == "367501912"
+
+cc_rule = Rule(cc_notice_checker, ellye_group_checker)
+egroup_rule = Rule(ellye_group_checker)
+
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
@@ -50,7 +59,7 @@ sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"})
 meal_help = on_command("帮助", rule=to_me())
 mark_good_ep = on_command("标记优质怡批", permission=SUPERUSER | ELLYE)
 force_gc_meal = on_command("外卖gc", permission=SUPERUSER | ELLYE)
-card_changed = on_notice()
+card_changed = on_notice(rule=cc_rule)
 
 
 async def get_goodep_status(id):
@@ -104,6 +113,14 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         whitelist = ["1763471048", "491673070"]
         if str(event.user_id) in whitelist:
             meals = await get_ellyes_meal(event.self_id, day, show_all=True)
+            await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
+        else:
+            meals = await get_ellyes_meal(event.self_id, day)
+            await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
+    elif len(sub_commands) == 2 and ("什么" in sub_commands[0] or "啥" in sub_commands[0]) and sub_commands[1] == "-aa":
+        whitelist = ["1763471048", "491673070"]
+        if str(event.user_id) in whitelist:
+            meals = await get_ellyes_meal(event.self_id, day, show_all=True, include_deleted=True)
             await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
         else:
             meals = await get_ellyes_meal(event.self_id, day)
@@ -168,7 +185,7 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
             await receive_greyed_users([event.user_id])
             await ellyesmeal.finish(await to_img_msg("别在这里捣乱！", "丁真的"))
         else:
-            await ellyesmeal.finish(await to_img_msg("参数错误，目前可用的参数为：-a"))
+            await ellyesmeal.finish(await to_img_msg("参数错误，目前可用的参数为：-a、-aa"))
 
     est_arrival_time = meal_string_data[-1]
     est_arrival_time = re.sub(r'[^\w]', '', est_arrival_time)
@@ -244,7 +261,7 @@ async def _(event: GroupMessageEvent, state: T_State = State()):
         await ellyesmeal.finish(await to_img_msg(f"投喂成功！  ID: {unique_id.upper()}"))
 
 
-async def get_ellyes_meal(id, day, show_all=False):
+async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
     year = datetime.now().year
     month = datetime.now().month
     today = datetime.now().day
@@ -257,7 +274,9 @@ async def get_ellyes_meal(id, day, show_all=False):
 
     meals = await get_decent_meals()
     meals = list(meals)
-
+    
+    if not include_deleted:
+        meals = [meal for meal in meals if meal["status"] != "已删除"]
 
     msg_parts = list()
     is_tmr_has_meal = False
@@ -478,10 +497,6 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 @card_changed.handle()
 async def _(event: Event):
-    if event.get_event_name() != "notice.group_card":
-        await card_changed.finish()
-    if event.group_id != 367501912:
-        await card_changed.finish()
     await db_set_gminfo(event.user_id, event.card_new)
 
 @force_gc_meal.handle()
