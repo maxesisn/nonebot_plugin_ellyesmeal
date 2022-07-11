@@ -47,6 +47,8 @@ cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 egroup_rule = Rule(ellye_group_checker)
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
+ellyesmeal_in_2days = on_command("怡宝这两天吃什么", aliases={"怡宝这两天喝什么", "怡宝这两天吃了什么", "怡宝这两天喝了什么"})
+ellyesmeal_in_3days = on_command("怡宝这三天吃什么", aliases={"怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这两天三了什么"})
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
@@ -71,6 +73,7 @@ async def get_card_with_cache(id):
             giver_info = await bot.get_group_member_info(group_id="367501912", user_id=id)
             card = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
             await db_set_gminfo(id, card)
+            logger.info(f"{id}'s card is {card}, cached it")
         except ActionFailed:
             card = id
     else:
@@ -146,6 +149,31 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         state["day"] = day
         state["meal_string_data"] = sub_commands
 
+@ellyesmeal_in_2days.handle()
+async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
+    await check_real_bad_ep(matcher=ellyesmeal_in_2days, bot=bot, event=event)
+    start_1 = time.time()
+    meals = await get_ellyes_meal(event.self_id, day="这两天")
+    msg = await to_img_msg(meals, f"怡宝这两天的菜单")
+    start_2 = time.time()
+    await ellyesmeal.send(msg)
+    end = time.time()
+    logger.debug(f"generate msg cost: {start_2 - start_1}")
+    logger.debug(f"send msg cost: {end - start_2}")
+    await ellyesmeal.finish()
+
+@ellyesmeal_in_3days.handle()
+async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
+    await check_real_bad_ep(matcher=ellyesmeal_in_3days, bot=bot, event=event)
+    start_1 = time.time()
+    meals = await get_ellyes_meal(event.self_id, day="这三天")
+    msg = await to_img_msg(meals, f"怡宝这三天的菜单")
+    start_2 = time.time()
+    await ellyesmeal.send(msg)
+    end = time.time()
+    logger.debug(f"generate msg cost: {start_2 - start_1}")
+    logger.debug(f"send msg cost: {end - start_2}")
+    await ellyesmeal.finish()
 
 
 @ellyesmeal.got("meal_string_data")
@@ -274,6 +302,41 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
     msg_parts = list()
     is_tmr_has_meal = False
     for meal in meals:
+        
+        mp = str()
+        if meal["status"] == "已隐藏" and not show_all:
+            continue
+        
+        tonight_late_time = datetime.timestamp(datetime(year=year, month=month, day=today, hour=23, minute=59))
+        tonight_early_time = datetime.timestamp(datetime(year=year, month=month, day=today, hour=0, minute=0))
+        match day:
+            case "这三天":
+                pass
+            case "这两天":
+                # 明天才到的不要
+                if meal['est_arrival_time'] > tonight_late_time:
+                    continue
+            case "今天":
+                # 明天才到的不要
+                if meal['est_arrival_time'] > tonight_late_time:
+                    is_tmr_has_meal = True
+                    continue
+                # 昨天到的也不要，但是在吃的除外
+                if meal['est_arrival_time'] < tonight_early_time and meal['status'] != "在吃":
+                    continue
+            case "明天":
+                # 今晚之前到的不要
+                if meal['est_arrival_time'] < tonight_late_time:
+                    continue
+            case "昨天":
+                # 今天0:00之后到的不要
+                if meal['est_arrival_time'] > tonight_early_time:
+                    continue
+    
+        giver_card = await get_card_with_cache(meal["giver"])
+        giver_full_info = f"{giver_card}({meal['giver']})"
+        giver_full_info = await process_long_text(giver_full_info)
+
         if "alters" in meal:
             alters = meal["alters"]
             alter_str_parts = list()
@@ -286,25 +349,7 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
                 alter_str = None
         else:
             alter_str = None
-        mp = str()
-        if meal["status"] == "已隐藏" and not show_all:
-            continue
-        if day == "今天":
-            if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=59, second=0)):
-                is_tmr_has_meal = True
-                continue
-            if meal['est_arrival_time'] < datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=0, minute=0, second=0)) and meal['status'] != "在吃":
-                continue
-        elif day == "明天":
-            if meal['est_arrival_time'] < datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=23, minute=59, second=0)):
-                continue
-        elif day == "昨天":
-            if meal['est_arrival_time'] > datetime.timestamp(datetime.now().replace(year=year, month=month, day=today, hour=0, minute=0, second=0)):
-                continue
-        
-        giver_card = await get_card_with_cache(meal["giver"])
-        giver_full_info = f"{giver_card}({meal['giver']})"
-        giver_full_info = await process_long_text(giver_full_info)
+
         if not alter_str:
             mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}"
         else:
@@ -491,6 +536,7 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 @card_changed.handle()
 async def _(event: Event):
     await db_set_gminfo(event.user_id, event.card_new)
+    logger.info(f"user {event.user_id} changed card to {event.card_new}")
 
 @force_gc_meal.handle()
 async def _():
