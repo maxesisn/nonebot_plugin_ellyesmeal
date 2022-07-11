@@ -44,11 +44,10 @@ async def ellye_group_checker(event: GroupMessageEvent) -> bool:
     return str(event.group_id) == "367501912"
 
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
-egroup_rule = Rule(ellye_group_checker)
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
 ellyesmeal_in_2days = on_command("怡宝这两天吃什么", aliases={"怡宝这两天喝什么", "怡宝这两天吃了什么", "怡宝这两天喝了什么"})
-ellyesmeal_in_3days = on_command("怡宝这三天吃什么", aliases={"怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这两天三了什么"})
+ellyesmeal_in_3days = on_command("怡宝这三天吃什么", aliases={"怡宝这三天喝什么", "怡宝这三天吃了什么", "怡宝这三天喝了什么"})
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
