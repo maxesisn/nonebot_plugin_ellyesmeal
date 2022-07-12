@@ -45,15 +45,16 @@ async def ellye_group_checker(event: GroupMessageEvent) -> bool:
 
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 eg_rule = Rule(ellye_group_checker)
+eg_tome_rule = Rule(to_me, ellye_group_checker)
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
-ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么")
+ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?")
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
-meal_howto = on_command("投食指南", aliases={"投喂指南"})
-sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"})
-meal_help = on_command("帮助", rule=to_me())
+meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_rule)
+sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"}, rule=eg_rule)
+meal_help = on_command("帮助", rule=eg_tome_rule)
 mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE)
 force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE)
 card_changed = on_notice(rule=cc_rule)
@@ -153,13 +154,21 @@ async def _(bot: Bot, event: GroupMessageEvent, rg = RegexGroup()):
     await check_real_bad_ep(matcher=ellyesmeal_in_xdays, bot=bot, event=event)
     rg = list(rg)
     day = rg[0]
+    arg = rg[3].strip()
+    print(arg)
     match day:
         case "两":
             day = "这两天"
         case "三":
             day = "这三天"
     start_1 = time.time()
-    meals = await get_ellyes_meal(event.self_id, day=day)
+    match arg:
+        case "-a":
+            meals = await get_ellyes_meal(event.self_id, day=day, show_all=True)
+        case "-aa":
+            meals = await get_ellyes_meal(event.self_id, day=day, show_all=True, include_deleted=True)
+        case _:
+            meals = await get_ellyes_meal(event.self_id, day=day)
     msg = await to_img_msg(meals, f"怡宝{day}的菜单")
     start_2 = time.time()
     await ellyesmeal.send(msg)
@@ -445,8 +454,7 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
         sender = event.get_user_id()
 
         result = await del_exact_meal(meal_id, "giver", sender)
-
-        if result.deleted_count:
+        if result and result.modified_count > 0:
             msg += "已删除\n"
         else:
             msg += f"外卖不存在，或者你要删除的外卖不是你点的哦\n"
@@ -464,8 +472,6 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 @meal_howto.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
     await check_real_bad_ep(matcher=meal_howto, bot=bot, event=event)
-    # if not event.group_id == 367501912:
-    #     await meal_howto.finish()
     howto = '''
 0.只有经过认证的优质怡批才可以使用本插件记录。
 认证方式：给怡宝点一份外卖，并发送订单截图至群内，经怡宝认可后便可获得优质怡批认证。
@@ -495,18 +501,14 @@ async def _(bot:Bot, event: GroupMessageEvent):
 
 @meal_help.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
-    if not event.group_id == 367501912:
-        await meal_help.finish()
     await check_real_bad_ep(matcher=meal_help, bot=bot, event=event)
     help = await get_ellyesmeal_help()
     await meal_help.finish(await to_img_msg(help, "投喂指南"))
 
 @sp_whois.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
-    if event.group_id != 367501912:
-        await sp_whois.finish()
     await check_real_bad_ep(matcher=sp_whois, bot=bot, event=event)
-    await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q2.qlogo.cn/headimg_dl?dst_uin=491673070&spec=100&t=1657289812436")+"\n怡宝")
+    await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
 
 
 @mark_good_ep.handle()
