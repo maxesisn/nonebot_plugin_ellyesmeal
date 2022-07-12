@@ -19,7 +19,7 @@ from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, ge
 from .data_source import set_goodeps as db_set_goodeps, get_goodep as db_get_goodep
 from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
 from .auth_ep import blacklist
-from .utils import to_img_msg, process_long_text, zh_pat
+from .utils import to_img_msg, process_long_text, zh_pat, shanghai_tz
 
 import re
 import uuid
@@ -186,6 +186,8 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
     day = state["day"]
     meal_string = "".join(meal_string_data)
 
+    order_time = datetime.now()
+
     if any(word in meal_string for word in blacklist):
         await receive_greyed_users([event.user_id])
         await ellyesmeal.finish(await to_img_msg("怡宴丁真，鉴定为假", "整蛊的"))
@@ -233,11 +235,11 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
             if minute > 59 or hour > 23:
                 is_time_recorded = False
             else:
-                est_arrival_time = datetime.now().replace(hour=hour, minute=minute)
+                est_arrival_time = order_time.replace(hour=hour, minute=minute)
 
     # 处理没有指定时间的情况
     else:
-        est_arrival_time = datetime.now() + timedelta(hours=1)
+        est_arrival_time = order_time + timedelta(hours=1)
         is_time_recorded = False
 
     # 处理预计送达时间为明天的情况
@@ -251,7 +253,7 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
             est_arrival_time += timedelta(days=1)
 
     # 判断是否已过预计送达时间
-    if est_arrival_time < datetime.now():
+    if est_arrival_time < order_time:
         await ellyesmeal.finish(await to_img_msg("怡宴丁真，鉴定为假", "错误的"))
 
     if is_time_recorded:
@@ -270,8 +272,8 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
         "id": unique_id.upper(),
         "giver": event.get_user_id(),
         "meal_content": meal_string,
-        "order_time": datetime.timestamp(datetime.now()),
-        "est_arrival_time": est_arrival_time.timestamp(),
+        "order_time": shanghai_tz.localize(order_time),
+        "est_arrival_time": shanghai_tz.localize(est_arrival_time),
         "status": "已下单" if not state["is_hidden"] else "已隐藏",
         "is_auto_good_ep": state["is_auto_good_ep"],
         "alters": state["alters"]
@@ -310,30 +312,30 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
         if meal["status"] == "已隐藏" and not show_all:
             continue
         
-        tonight_late_time = datetime.timestamp(datetime(year=year, month=month, day=today, hour=23, minute=59))
-        tonight_early_time = datetime.timestamp(datetime(year=year, month=month, day=today, hour=0, minute=0))
+        today_start_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=23, minute=59))
+        today_end_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=0, minute=0))
         match day:
             case "这三天":
                 pass
             case "这两天":
                 # 明天才到的不要
-                if meal['est_arrival_time'] > tonight_late_time:
+                if meal['est_arrival_time'] > today_start_time:
                     continue
             case "今天":
                 # 明天才到的不要
-                if meal['est_arrival_time'] > tonight_late_time:
+                if meal['est_arrival_time'] > today_start_time:
                     is_tmr_has_meal = True
                     continue
                 # 昨天到的也不要，但是在吃的除外
-                if meal['est_arrival_time'] < tonight_early_time and meal['status'] != "在吃":
+                if meal['est_arrival_time'] < today_end_time and meal['status'] != "在吃":
                     continue
             case "明天":
                 # 今晚之前到的不要
-                if meal['est_arrival_time'] < tonight_late_time:
+                if meal['est_arrival_time'] < today_start_time:
                     continue
             case "昨天":
                 # 今天0:00之后到的不要
-                if meal['est_arrival_time'] > tonight_early_time:
+                if meal['est_arrival_time'] > today_end_time:
                     continue
     
         giver_card = await get_card_with_cache(meal["giver"])
@@ -354,17 +356,17 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
             alter_str = None
 
         if not alter_str:
-            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}"
+            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {meal['est_arrival_time'].strftime('%Y-%m-%d %H:%M')}"
         else:
-            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {alter_str}\n记录者：      {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {datetime.fromtimestamp(meal['est_arrival_time']).strftime('%Y-%m-%d %H:%M')}"    
+            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {alter_str}\n记录者：      {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {meal['est_arrival_time'].strftime('%Y-%m-%d %H:%M')}"    
         if meal["is_auto_good_ep"]:
-            left_time = datetime.fromtimestamp(meal['order_time']) + timedelta(hours=3) - datetime.now()
+            left_time = meal['order_time'] + timedelta(hours=3) - datetime.now()
             if left_time < timedelta(seconds=0):
                 await clean_fake_meals()    
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         elif meal["status"] == "已隐藏":
-            left_time = datetime.fromtimestamp(meal['order_time']) + timedelta(hours=2) - datetime.now()
+            left_time = meal['order_time'] + timedelta(hours=2) - datetime.now()
             if left_time < timedelta(seconds=0):
                 await clean_fake_meals()    
             else:
@@ -520,7 +522,8 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
             good_ep = ms.data["qq"]
             good_ep = str(good_ep)
             await update_autoep_status(good_ep, False)
-            await db_set_goodeps(good_ep, datetime.now())
+
+            await db_set_goodeps(good_ep, shanghai_tz.localize(datetime.now()))
             await clean_greyed_user(good_ep)
 
     if is_have_result:

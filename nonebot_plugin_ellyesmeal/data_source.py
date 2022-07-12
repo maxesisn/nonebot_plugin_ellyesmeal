@@ -7,7 +7,7 @@ from .auth_ep import receive_greyed_users
 from datetime import datetime, timedelta
 
 from .mongo_source import meals_data, whitelist_data, cards_data
-
+from .utils import shanghai_tz
 
 async def get_gm_info(user_id):
     user_id = str(user_id)
@@ -60,8 +60,8 @@ async def get_decent_meals():
             month = 12
             year = year - 1
         today = monthrange(year, month)[1] + 1
-    decent_time = datetime.timestamp(datetime.now().replace(
-        year=year, month=month, day=today-1, hour=0, minute=0, second=0))
+    decent_time = datetime.now().replace(year=year, month=month, day=today-1, hour=0, minute=0, second=0)
+    decent_time = shanghai_tz.localize(decent_time)
     result = meals_data.find(
         {
             "$or":
