@@ -62,7 +62,6 @@ async def get_decent_meals():
         today = monthrange(year, month)[1] + 1
     decent_time = datetime(year=year, month=month, day=today-1, hour=0, minute=0, second=0)
     decent_time = decent_time - timedelta(hours=8)
-    print(decent_time)
     result = meals_data.find(
         {
             "$or":
