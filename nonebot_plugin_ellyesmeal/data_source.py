@@ -26,7 +26,7 @@ async def set_gm_info(user_id, gm_info):
     return result.modified_count
 
 
-async def set_goodeps(user_id, time):
+async def set_goodep(user_id, time):
     user_id = str(user_id)
     whitelist_data.update_one(
         {'id': user_id},
@@ -42,7 +42,7 @@ async def get_goodep(user_id):
 
 async def check_id_exist(id):
     id = meals_data.find_one({'id': id})
-    return True if id else False
+    return bool(id)
 
 
 async def insert_meal(meal):

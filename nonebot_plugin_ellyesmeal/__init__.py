@@ -16,7 +16,7 @@ from nonebot_plugin_apscheduler import scheduler
 
 
 from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
-from .data_source import set_goodeps as db_set_goodeps, get_goodep as db_get_goodep
+from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_goodep
 from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
 from .auth_ep import blacklist
 from .utils import to_img_msg, process_long_text, zh_pat, shanghai_tz
