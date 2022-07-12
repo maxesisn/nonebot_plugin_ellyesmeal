@@ -6,7 +6,7 @@ from .auth_ep import receive_greyed_users
 
 from datetime import datetime, timedelta
 
-from .mongo_source import meals_data, whitelist_data, cards_data
+from .mongo_source import meals_data, whitelist_data, cards_data, misc_data
 from .utils import shanghai_tz
 
 async def get_gm_info(user_id):
@@ -152,3 +152,23 @@ async def db_clean_fake_meals(force=False):
 
     if greyed_users:
         await receive_greyed_users(greyed_users)
+
+async def get_announcement():
+    result = misc_data.find_one({'name': 'announcement'})
+    return result['content'] if result else ""
+
+async def set_announcement(content):
+    result = misc_data.update_one(
+        {'name': 'announcement'},
+        {'$set': {'content': content, 'set_time': shanghai_tz.localize(datetime.now())}},
+        upsert=True
+    )
+    return result.modified_count
+
+async def clean_outdated_announcement():
+    result = misc_data.find_one({'name': 'announcement'})
+    if result:
+        if shanghai_tz.localize(datetime.now()) - result['set_time'] > timedelta(hours=24):
+            misc_data.update_one({'name': 'announcement'}, {"$set": {'content': None}})
+            return True
+    return False

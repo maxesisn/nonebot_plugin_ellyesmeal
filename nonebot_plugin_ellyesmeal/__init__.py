@@ -17,9 +17,10 @@ from nonebot_plugin_apscheduler import scheduler
 
 from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
 from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_goodep
+from .data_source import get_announcement as db_get_anno, set_announcement as db_set_anno, clean_outdated_announcement as db_clean_outdated_anno
 from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
 from .auth_ep import blacklist
-from .utils import to_img_msg, process_long_text, zh_pat, shanghai_tz
+from .utils import to_img_msg, process_long_text, process_anno_format, zh_pat, shanghai_tz
 
 import re
 import uuid
@@ -40,7 +41,7 @@ SU_OR_ELLYE = Permission(ELLYE) | SUPERUSER
 async def cc_notice_checker(event: Event) -> bool:
     return event.get_event_name() == "notice.group_card"
 
-async def ellye_group_checker(event: GroupMessageEvent) -> bool:
+async def ellye_group_checker(event: Event) -> bool:
     return str(event.group_id) == "367501912"
 
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
@@ -54,7 +55,9 @@ delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖"
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_rule)
 sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"}, rule=eg_rule)
-meal_help = on_command("帮助", rule=eg_tome_rule)
+meal_help = on_command("帮助", rule=to_me())
+set_anno = on_command("设置公告", aliases={"创建公告", "更新公告"}, permission=SU_OR_ELLYE)
+append_anno = on_command("追加公告", aliases={"附加公告"}, permission=SU_OR_ELLYE)
 mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE)
 force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE)
 card_changed = on_notice(rule=cc_rule)
@@ -80,6 +83,11 @@ async def get_card_with_cache(id):
         logger.debug(f"read user card from cache succeed: {card}")
     return card
 
+async def insert_anno(text):
+    anno = await db_get_anno()
+    anno = await process_anno_format(anno)
+    text = anno + text
+    return text
 
 @ellyesmeal.handle()
 async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
@@ -101,6 +109,7 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
     if len(sub_commands) == 1 and ("什么" in sub_commands[0] or "啥" in sub_commands[0]):
         start_1 = time.time()
         meals = await get_ellyes_meal(event.self_id, day)
+        meals = await insert_anno(meals)
         msg = await to_img_msg(meals, f"怡宝{day}的菜单")
         start_2 = time.time()
         await ellyesmeal.send(msg)
@@ -111,22 +120,28 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
     elif len(sub_commands) == 2 and ("什么" in sub_commands[0] or "啥" in sub_commands[0]) and sub_commands[1] == "-a":
         if await SU_OR_ELLYE(bot=bot, event=event):
             meals = await get_ellyes_meal(event.self_id, day, show_all=True)
+            meals = await insert_anno(meals)
             await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
         else:
             meals = await get_ellyes_meal(event.self_id, day)
+            meals = await insert_anno(meals)
             await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
     elif len(sub_commands) == 2 and ("什么" in sub_commands[0] or "啥" in sub_commands[0]) and sub_commands[1] == "-aa":
         if await SU_OR_ELLYE(bot=bot, event=event):
             meals = await get_ellyes_meal(event.self_id, day, show_all=True, include_deleted=True)
+            meals = await insert_anno(meals)
             await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
         else:
             meals = await get_ellyes_meal(event.self_id, day)
+            meals = await insert_anno(meals)
             await ellyesmeal.finish(await to_img_msg(meals, f"怡宝{day}的菜单"))
     elif len(sub_commands) == 1 and sub_commands[0] == "什么帮助":
         help = await get_ellyesmeal_help()
+        help = await insert_anno(help)
         await ellyesmeal.finish(await to_img_msg(help, "帮助"))
     elif len(sub_commands) > 1 and sub_commands[1] == "帮助":
         help = await get_ellyesmeal_help()
+        help = await insert_anno(help)
         await ellyesmeal.finish(await to_img_msg(help, "帮助"))
     else:
         ges = await get_goodep_status(event.user_id)
@@ -168,6 +183,7 @@ async def _(bot: Bot, event: GroupMessageEvent, rg = RegexGroup()):
             meals = await get_ellyes_meal(event.self_id, day=day, show_all=True, include_deleted=True)
         case _:
             meals = await get_ellyes_meal(event.self_id, day=day)
+    meals = await insert_anno(meals)
     msg = await to_img_msg(meals, f"怡宝{day}的菜单")
     start_2 = time.time()
     await ellyesmeal.send(msg)
@@ -361,13 +377,13 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
         if meal["is_auto_good_ep"]:
             left_time = meal['order_time'] + timedelta(hours=3) - datetime.now()
             if left_time < timedelta(seconds=0):
-                await clean_fake_meals()    
+                await db_cleaner()    
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         elif meal["status"] == "已隐藏":
             left_time = meal['order_time'] + timedelta(hours=2) - datetime.now()
             if left_time < timedelta(seconds=0):
-                await clean_fake_meals()    
+                await db_cleaner()    
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         if mp:
@@ -469,6 +485,19 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
         await del_exact_meal(id.upper())
     await force_delete_meal.finish(await to_img_msg("已删除指定的外卖信息"))
 
+@set_anno.handle()
+async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    content = str(args)
+    await db_set_anno(content)
+    await set_anno.finish("ok")
+
+@append_anno.handle()
+async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    old_anno = await db_get_anno()
+    new_anno = str(args)
+    new_anno = old_anno + "\n" + new_anno
+    await db_set_anno(new_anno)
+    await append_anno.finish("ok")
 
 @meal_howto.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
@@ -504,6 +533,8 @@ async def _(bot:Bot, event: GroupMessageEvent):
 async def _(bot:Bot, event: GroupMessageEvent):
     await check_real_bad_ep(matcher=meal_help, bot=bot, event=event)
     help = await get_ellyesmeal_help()
+    anno = await db_get_anno()
+    help = anno + help
     await meal_help.finish(await to_img_msg(help, "投喂指南"))
 
 @sp_whois.handle()
@@ -541,6 +572,6 @@ async def _():
     await force_gc_meal.finish("ok")
 
 @scheduler.scheduled_job("interval", minutes=5)
-async def clean_fake_meals():
+async def db_cleaner():
     await db_clean_fake_meals()
-
+    await db_clean_outdated_anno()

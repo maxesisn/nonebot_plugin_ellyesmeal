@@ -15,11 +15,15 @@ async def to_img_msg(content, title="信息"):
     pic = img.save(title, content)
     return MessageSegment.image(pic)
 
-
-async def process_long_text(text):
+async def get_text_visual_length(text):
     text_length = len(text)
     text_utf8_length = len(text.encode("utf-8"))
     text_visual_length = int((text_utf8_length - text_length) / 2 + text_length)
+    return text_visual_length
+
+
+async def process_long_text(text):
+    text_visual_length = await get_text_visual_length(text)
     if text_visual_length > 43:
         text_chunks = str()
         length_counter = 0
@@ -31,3 +35,10 @@ async def process_long_text(text):
                 length_counter = 0
         text = text_chunks
     return text
+
+async def process_anno_format(text):
+    formatted_text = str()
+    formatted_text += "==公告==================================================="
+    formatted_text += text
+    formatted_text += "\n=========================================================\n"
+    return formatted_text
