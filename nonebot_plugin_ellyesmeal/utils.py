@@ -7,6 +7,8 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 font_size = 32
 shanghai_tz = pytz.timezone('Asia/Shanghai')
 zh_pat = re.compile(r"[\u4e00-\u9fa5]")
+jp_pat = re.compile(r"[\u0800-\u4e00]")
+
 
 async def to_img_msg(content, title="信息"):
     img = Txt2Img(font_size)
@@ -23,7 +25,7 @@ async def process_long_text(text):
         length_counter = 0
         for char in text:
             text_chunks += char
-            length_counter += 2 if re.search(zh_pat, char) else 1
+            length_counter += 2 if (re.search(zh_pat, char) or re.search(jp_pat, char)) else 1
             if length_counter >= 42:
                 text_chunks+="\n              " # 14 spaces
                 length_counter = 0

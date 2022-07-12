@@ -314,6 +314,7 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
         
         today_start_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=23, minute=59))
         today_end_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=0, minute=0))
+        print(meal["meal_content"], meal["order_time"], meal["est_arrival_time"])
         match day:
             case "这三天":
                 pass
@@ -336,6 +337,7 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
             case "昨天":
                 # 今天0:00之后到的不要
                 if meal['est_arrival_time'] > today_end_time:
+                    print(meal['est_arrival_time'], today_end_time, meal["meal_content"])
                     continue
     
         giver_card = await get_card_with_cache(meal["giver"])
