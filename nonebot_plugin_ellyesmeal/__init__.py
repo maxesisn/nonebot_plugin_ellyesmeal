@@ -382,9 +382,11 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         elif meal["status"] == "已隐藏":
-            left_time = meal['order_time'] + timedelta(hours=2) - datetime.now()
-            if left_time < timedelta(seconds=0):
-                await db_cleaner()    
+            left_time: timedelta = meal['order_time'] + timedelta(hours=2) - shanghai_tz.localize(datetime.now())
+            print(left_time, meal["meal_content"])
+            if left_time.total_seconds() < 0:
+                await db_cleaner()   
+                mp += f"\n【外卖已超时，等待自动清理。】"
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         if mp:

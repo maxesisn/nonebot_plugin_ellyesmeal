@@ -116,8 +116,9 @@ async def update_autoep_status(id, status):
 
 
 async def db_clean_fake_meals(force=False):
-    timer_for_hidden = datetime.timestamp(datetime.now() - timedelta(hours=2)) if not force else 4102444799
-    timer_for_autoep = datetime.timestamp(datetime.now() - timedelta(hours=3)) if not force else 4102444799
+    timer_final = datetime(year=2099, month=12, day=31, hour=23, minute=59, second=59)
+    timer_for_hidden = datetime.now() - timedelta(hours=2) if not force else timer_final
+    timer_for_autoep = datetime.now() - timedelta(hours=3) if not force else timer_final
     result_hidden = meals_data.find({
         "$and": [
             {
