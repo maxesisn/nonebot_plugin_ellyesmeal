@@ -1,7 +1,7 @@
 import re
 import pytz
 
-from nonebot_plugin_txt2img import Txt2Img
+from .txt2img.txt2img import Txt2Img
 from nonebot.adapters.onebot.v11 import MessageSegment
 
 font_size = 32
@@ -37,8 +37,10 @@ async def process_long_text(text):
     return text
 
 async def process_anno_format(text):
+    text_list = text.split("\n")
     formatted_text = str()
     formatted_text += "==公告==================================================="
-    formatted_text += text
-    formatted_text += "\n=========================================================\n"
+    for i in range(len(text_list)):
+        formatted_text += f"{i+1}.{text_list[i]}\n"
+    formatted_text += "=========================================================\n"
     return formatted_text

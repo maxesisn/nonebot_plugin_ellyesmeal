@@ -58,6 +58,7 @@ sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"}, rule=eg_rule)
 meal_help = on_command("帮助", rule=to_me())
 set_anno = on_command("设置公告", aliases={"创建公告", "更新公告"}, permission=SU_OR_ELLYE)
 append_anno = on_command("追加公告", aliases={"附加公告"}, permission=SU_OR_ELLYE)
+delete_anno = on_command("删除公告", permission=SU_OR_ELLYE)
 mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE)
 force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE)
 card_changed = on_notice(rule=cc_rule)
@@ -498,6 +499,24 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
     new_anno = old_anno + "\n" + new_anno
     await db_set_anno(new_anno)
     await append_anno.finish("ok")
+
+@delete_anno.handle()
+async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+    anno_num = str(args)
+    if not anno_num:
+        await db_set_anno("")
+    elif anno_num.isdigit():
+        anno_lines = await db_get_anno()
+        anno_lines = anno_lines.split("\n")
+        if int(anno_num) > len(anno_lines):
+            await delete_anno.finish(await to_img_msg("公告里没有这条哦"))
+        else:
+            anno_lines.pop(int(anno_num)-1)
+            anno_lines = "\n".join(anno_lines)
+            await db_set_anno(anno_lines)
+            await delete_anno.finish("ok")
+    else:
+        await delete_anno.finish(await to_img_msg("格式错误，请重新按照如下格式发送信息：删除公告 <数字>"))
 
 @meal_howto.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
