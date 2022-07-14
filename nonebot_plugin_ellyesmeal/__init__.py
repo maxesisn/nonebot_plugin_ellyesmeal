@@ -48,13 +48,15 @@ cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 eg_rule = Rule(ellye_group_checker)
 eg_tome_rule = Rule(to_me, ellye_group_checker)
 
+ellye_title = ("工贼", "懒狗", "渣男", "怡宝")
+
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
 ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?")
 update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_rule)
-sp_whois = on_command("谁是工贼", aliases={"谁是懒狗"}, rule=eg_rule)
+sp_whois = on_regex(r"谁是|是谁", rule=eg_rule)
 meal_help = on_command("帮助", rule=to_me())
 set_anno = on_command("设置公告", aliases={"创建公告", "更新公告"}, permission=SU_OR_ELLYE)
 append_anno = on_command("追加公告", aliases={"附加公告"}, permission=SU_OR_ELLYE)
@@ -541,8 +543,7 @@ async def _(bot:Bot, event: GroupMessageEvent):
 为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食（如肠粉）/饮品（半糖少冰）/甜食（要耐放）/水果（不要瓜类）等，价格保持在20-30元左右以提升怡宝的好感度。
 -----
 3.你应该在什么时间投喂：
-工作日早10点至下午3点，地址为公司地址；
-工作日晚9点至早8点，地址为公寓地址；
+工作日早10点至下午4点，地址为公司地址；
 休息日全天均为公寓地址。
 -----
 4.你应该如何记录给怡宝点的外卖：'''
@@ -560,8 +561,17 @@ async def _(bot:Bot, event: GroupMessageEvent):
 
 @sp_whois.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
-    await check_real_bad_ep(matcher=sp_whois, bot=bot, event=event)
-    await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
+    msg = event.get_plaintext()
+    if msg.startswith("谁是"):
+        msg = msg[2:]
+        msg = msg.strip()
+        if msg in ellye_title:
+            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
+    elif msg.endswith("是谁"):
+        msg = msg[:-2]
+        msg = msg.strip()
+        if msg in ellye_title:
+            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
 
 
 @mark_good_ep.handle()
