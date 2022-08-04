@@ -109,7 +109,8 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
     for sub in sub_commands:
         if sub == "":
             sub_commands.remove(sub)
-    if len(sub_commands) == 1 and ("什么" in sub_commands[0] or "啥" in sub_commands[0]):
+    quest_word = ["什么", "啥", "了吗"]
+    if len(sub_commands) == 1 and any(q in sub_commands[0] for q in quest_word):
         start_1 = time.time()
         meals = await get_ellyes_meal(event.self_id, day)
         meals = await insert_anno(meals)
@@ -309,12 +310,12 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
     year = datetime.now().year
     month = datetime.now().month
     today = datetime.now().day
-    if today == 1:
-        month = month - 1
-        if month == 0:
-            month = 12
-            year = year - 1
-        today = monthrange(year, month)[1] + 1
+    # if today == 1:
+    #     month = month - 1
+    #     if month == 0:
+    #         month = 12
+    #         year = year - 1
+    #     today = monthrange(year, month)[1] + 1
 
     meals = await get_decent_meals()
     meals = list(meals)
@@ -561,6 +562,7 @@ async def _(bot:Bot, event: GroupMessageEvent):
 
 @sp_whois.handle()
 async def _(bot:Bot, event: GroupMessageEvent):
+    await check_real_bad_ep(matcher=sp_whois, bot=bot, event=event)
     msg = event.get_plaintext()
     if msg.startswith("谁是"):
         msg = msg[2:]

@@ -37,6 +37,8 @@ async def process_long_text(text):
     return text
 
 async def process_anno_format(text):
+    if text is None:
+        return ""
     text_list = text.split("\n")
     formatted_text = str()
     formatted_text += "==公告==================================================="
