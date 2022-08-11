@@ -20,7 +20,7 @@ from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_good
 from .data_source import get_announcement as db_get_anno, set_announcement as db_set_anno, clean_outdated_announcement as db_clean_outdated_anno
 from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
 from .auth_ep import blacklist
-from .utils import to_img_msg, process_long_text, process_anno_format, zh_pat, shanghai_tz
+from .utils import to_img_msg, process_long_text, process_anno_format, wide_pat, shanghai_tz
 
 import re
 import uuid
@@ -48,7 +48,8 @@ cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 eg_rule = Rule(ellye_group_checker)
 eg_tome_rule = Rule(to_me, ellye_group_checker)
 
-ellye_title = ("工贼", "懒狗", "渣男", "怡宝")
+ellye_bad_title = ("工贼", "懒狗", "渣男", "怡宝")
+ellye_good_title = ("善人", "仁人君子", "贤人", "完人", "正人君子", "仁人义士", "圣者", "贤士", "谦谦君子", "仁人志士", "贤达", "好汉", "能人", "怡宝")
 
 ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
 ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?")
@@ -216,7 +217,7 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
         await ellyesmeal.finish()
     if meal_string.endswith(("?", "？")):
         await ellyesmeal.finish()
-    if not zh_pat.search(meal_string):
+    if not wide_pat.search(meal_string):
         await receive_greyed_users([event.user_id])
         await ellyesmeal.finish(await to_img_msg("怡宴丁真，鉴定为假", "卑鄙的"))
     if meal_string == "我":
@@ -567,13 +568,17 @@ async def _(bot:Bot, event: GroupMessageEvent):
     if msg.startswith("谁是"):
         msg = msg[2:]
         msg = msg.strip()
-        if msg in ellye_title:
+        if msg in ellye_good_title:
             await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
+        if msg in ellye_bad_title:
+            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+"首先排除怡宝")
     elif msg.endswith("是谁"):
         msg = msg[:-2]
         msg = msg.strip()
-        if msg in ellye_title:
+        if msg in ellye_good_title:
             await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
+        if msg in ellye_bad_title:
+            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+"首先排除怡宝")
 
 
 @mark_good_ep.handle()
