@@ -1,5 +1,5 @@
 from typing import Tuple
-from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, Bot, Event, MessageSegment
+from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, Bot, Event, MessageSegment, GroupIncreaseNoticeEvent
 from nonebot.adapters.onebot.exception import ActionFailed
 from nonebot.typing import T_State
 from nonebot.params import State, CommandArg, Command, RegexGroup
@@ -65,6 +65,7 @@ delete_anno = on_command("删除公告", permission=SU_OR_ELLYE)
 mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE)
 force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE)
 card_changed = on_notice(rule=cc_rule)
+welcome_new_ep = on_notice(rule=eg_rule)
 
 
 async def get_goodep_status(id):
@@ -567,18 +568,13 @@ async def _(bot:Bot, event: GroupMessageEvent):
     msg = event.get_plaintext()
     if msg.startswith("谁是"):
         msg = msg[2:]
-        msg = msg.strip()
-        if msg in ellye_good_title:
-            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
-        if msg in ellye_bad_title:
-            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+"首先排除怡宝")
     elif msg.endswith("是谁"):
         msg = msg[:-2]
-        msg = msg.strip()
-        if msg in ellye_good_title:
-            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
-        if msg in ellye_bad_title:
-            await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+"首先排除怡宝")
+    msg = msg.strip()
+    if msg in ellye_good_title:
+        await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+MessageSegment.image(file="http://q1.qlogo.cn/g?b=qq&nk=491673070&s=160")+"\n怡宝")
+    if msg in ellye_bad_title:
+        await sp_whois.finish(MessageSegment.at(event.get_user_id()) + "\n"+"首先排除怡宝")
 
 
 @mark_good_ep.handle()
@@ -603,6 +599,11 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 async def _(event: Event):
     await db_set_gminfo(event.user_id, event.card_new)
     logger.info(f"user {event.user_id} changed card to {event.card_new}")
+
+@welcome_new_ep.handle()
+async def _(event: GroupIncreaseNoticeEvent):
+    await get_card_with_cache(event.user_id)
+    await welcome_new_ep.finish(MessageSegment.image(file="file:///home/maxesisn/botData/res/ellyewelcome.jpg"))
 
 @force_gc_meal.handle()
 async def _():
