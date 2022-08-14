@@ -1,45 +1,46 @@
-from typing import Tuple
-from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, Bot, Event, MessageSegment, GroupIncreaseNoticeEvent
-from nonebot.adapters.onebot.exception import ActionFailed
-from nonebot.typing import T_State
-from nonebot.params import State, CommandArg, Command, RegexGroup
-from nonebot.permission import SUPERUSER, Permission
-from nonebot import get_bot, get_driver
-from nonebot import on_command, on_notice, on_regex
-from nonebot.rule import to_me, Rule
 from nonebot.log import logger
-
+from nonebot.rule import to_me, Rule
+from nonebot import on_command, on_notice, on_regex
+from nonebot import get_bot, get_driver
+from nonebot.permission import SUPERUSER, Permission
+from nonebot.params import State, CommandArg, Command, RegexGroup
+from nonebot.typing import T_State
+from nonebot.adapters.onebot.exception import ActionFailed
+from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent, GroupIncreaseNoticeEvent
 from nonebot import require
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
 
-
-
-from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
-from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_goodep
-from .data_source import get_announcement as db_get_anno, set_announcement as db_set_anno, clean_outdated_announcement as db_clean_outdated_anno
-from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
-from .auth_ep import blacklist
-from .utils import to_img_msg, process_long_text, process_anno_format, wide_pat, shanghai_tz
-
-import re
-import uuid
-
-from datetime import datetime, timedelta
-import time
+from typing import Tuple
 from calendar import monthrange
+import time
+from datetime import datetime, timedelta
+import uuid
+import re
+from .utils import to_img_msg, process_long_text, process_anno_format, wide_pat, shanghai_tz
+from .auth_ep import blacklist
+from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user, check_real_bad_ep
+from .data_source import get_announcement as db_get_anno, set_announcement as db_set_anno, clean_outdated_announcement as db_clean_outdated_anno
+from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_goodep
+from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
+
+
+
 
 global_config = get_driver().config
 
 id_pat = re.compile(r"^[A-Za-z0-9]*$")
+
 
 async def ELLYE(bot: Bot, event: Event) -> bool:
     return event.get_user_id() == "491673070"
 
 SU_OR_ELLYE = Permission(ELLYE) | SUPERUSER
 
+
 async def cc_notice_checker(event: Event) -> bool:
     return event.get_event_name() == "notice.group_card"
+
 
 async def ellye_group_checker(event: Event) -> bool:
     return str(event.group_id) == "367501912"
@@ -49,11 +50,14 @@ eg_rule = Rule(ellye_group_checker)
 eg_tome_rule = Rule(to_me, ellye_group_checker)
 
 ellye_bad_title = ("工贼", "懒狗", "渣男", "怡宝")
-ellye_good_title = ("善人", "仁人君子", "贤人", "完人", "正人君子", "仁人义士", "圣者", "贤士", "谦谦君子", "仁人志士", "贤达", "好汉", "能人", "怡宝")
+ellye_good_title = ("善人", "仁人君子", "贤人", "完人", "正人君子", "仁人义士",
+                    "圣者", "贤士", "谦谦君子", "仁人志士", "贤达", "好汉", "能人", "怡宝")
 
-ellyesmeal = on_command("怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
+ellyesmeal = on_command(
+    "怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
 ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?")
-update_meal_status = on_command("更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
+update_meal_status = on_command(
+    "更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
 delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
 force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
 meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_rule)
@@ -72,6 +76,7 @@ async def get_goodep_status(id):
     result = await db_get_goodep(id)
     return result
 
+
 async def get_card_with_cache(id):
     bot = get_bot()
     id = str(id)
@@ -88,11 +93,13 @@ async def get_card_with_cache(id):
         logger.debug(f"read user card from cache succeed: {card}")
     return card
 
+
 async def insert_anno(text):
     anno = await db_get_anno()
     anno = await process_anno_format(anno)
     text = anno + text
     return text
+
 
 @ellyesmeal.handle()
 async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
@@ -166,12 +173,13 @@ async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Comma
         else:
             state["is_hidden"] = False
         if day == "昨天":
-                await ellyesmeal.finish(await to_img_msg("别在这里捣乱！", "丁真的"))
+            await ellyesmeal.finish(await to_img_msg("别在这里捣乱！", "丁真的"))
         state["day"] = day
         state["meal_string_data"] = sub_commands
 
+
 @ellyesmeal_in_xdays.handle()
-async def _(bot: Bot, event: GroupMessageEvent, rg = RegexGroup()):
+async def _(bot: Bot, event: GroupMessageEvent, rg=RegexGroup()):
     await check_real_bad_ep(matcher=ellyesmeal_in_xdays, bot=bot, event=event)
     rg = list(rg)
     day = rg[0]
@@ -197,7 +205,6 @@ async def _(bot: Bot, event: GroupMessageEvent, rg = RegexGroup()):
     logger.debug(f"generate msg cost: {start_2 - start_1}")
     logger.debug(f"send msg cost: {end - start_2}")
     await ellyesmeal.finish()
-
 
 
 @ellyesmeal.got("meal_string_data")
@@ -288,7 +295,7 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
         result = await check_id_exist(unique_id)
         if not result:
             break
-    
+
     data = {
         "id": unique_id.upper(),
         "giver": event.get_user_id(),
@@ -321,20 +328,22 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
 
     meals = await get_decent_meals()
     meals = list(meals)
-    
+
     if not include_deleted:
         meals = [meal for meal in meals if meal["status"] != "已删除"]
 
     msg_parts = list()
     is_tmr_has_meal = False
     for meal in meals:
-        
+
         mp = str()
         if meal["status"] == "已隐藏" and not show_all:
             continue
-        
-        today_start_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=23, minute=59))
-        today_end_time = shanghai_tz.localize(datetime(year=year, month=month, day=today, hour=0, minute=0))
+
+        today_start_time = shanghai_tz.localize(
+            datetime(year=year, month=month, day=today, hour=23, minute=59))
+        today_end_time = shanghai_tz.localize(
+            datetime(year=year, month=month, day=today, hour=0, minute=0))
         match day:
             case "这三天":
                 pass
@@ -358,7 +367,7 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
                 # 今天0:00之后到的不要
                 if meal['est_arrival_time'] > today_end_time:
                     continue
-    
+
         giver_card = await get_card_with_cache(meal["giver"])
         giver_full_info = f"{giver_card}({meal['giver']})"
         giver_full_info = await process_long_text(giver_full_info)
@@ -379,18 +388,20 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
         if not alter_str:
             mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {meal['est_arrival_time'].strftime('%Y-%m-%d %H:%M')}"
         else:
-            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {alter_str}\n记录者：      {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {meal['est_arrival_time'].strftime('%Y-%m-%d %H:%M')}"    
+            mp += f"ID: {meal['id']}      状态: {meal['status']}\n热心群友：    {alter_str}\n记录者：      {giver_full_info}\n内容:         {meal['meal_content']}\n预计送达时间: {meal['est_arrival_time'].strftime('%Y-%m-%d %H:%M')}"
         if meal["is_auto_good_ep"]:
-            left_time = meal['order_time'] + timedelta(hours=3) - datetime.now()
+            left_time = meal['order_time'] + \
+                timedelta(hours=3) - datetime.now()
             if left_time < timedelta(seconds=0):
-                await db_cleaner()    
+                await db_cleaner()
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
         elif meal["status"] == "已隐藏":
-            left_time: timedelta = meal['order_time'] + timedelta(hours=2) - shanghai_tz.localize(datetime.now())
+            left_time: timedelta = meal['order_time'] + \
+                timedelta(hours=2) - shanghai_tz.localize(datetime.now())
             print(left_time, meal["meal_content"])
             if left_time.total_seconds() < 0:
-                await db_cleaner()   
+                await db_cleaner()
                 mp += f"\n【外卖已超时，等待自动清理。】"
             else:
                 mp += f"\n【若未被正式认可，该外卖将在{str(left_time)[:-7]}后自动删除。】"
@@ -401,7 +412,8 @@ async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
         if is_tmr_has_meal:
             msg += "\n\n                        *但是明天有吃的"
     else:
-        msg = "\n---------------------------------------------------------".join(msg_parts)
+        msg = "\n---------------------------------------------------------".join(
+            msg_parts)
     return msg
 
 
@@ -427,7 +439,7 @@ async def get_ellyesmeal_help():
 
 
 @update_meal_status.handle()
-async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     await check_real_bad_ep(matcher=update_meal_status, bot=bot, event=event)
     sub_commands = str(args)
     sub_commands = sub_commands.split(" ")
@@ -467,7 +479,7 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
 
 
 @delete_meal.handle()
-async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     await check_real_bad_ep(matcher=delete_meal, bot=bot, event=event)
     sub_commands = str(args).split(" ")
     msg = ""
@@ -486,6 +498,7 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
 
     await delete_meal.finish(await to_img_msg(msg))
 
+
 @force_delete_meal.handle()
 async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     ids = str(args).split(" ")
@@ -493,22 +506,25 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
         await del_exact_meal(id.upper())
     await force_delete_meal.finish(await to_img_msg("已删除指定的外卖信息"))
 
+
 @set_anno.handle()
-async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     content = str(args)
     await db_set_anno(content)
     await set_anno.finish("ok")
 
+
 @append_anno.handle()
-async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     old_anno = await db_get_anno()
     new_anno = str(args)
     new_anno = old_anno + "\n" + new_anno
     await db_set_anno(new_anno)
     await append_anno.finish("ok")
 
+
 @delete_anno.handle()
-async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
     anno_num = str(args)
     if not anno_num:
         await db_set_anno("")
@@ -525,8 +541,9 @@ async def _(bot:Bot, event: GroupMessageEvent, args: Message = CommandArg(), sta
     else:
         await delete_anno.finish(await to_img_msg("格式错误，请重新按照如下格式发送信息：删除公告 <数字>"))
 
+
 @meal_howto.handle()
-async def _(bot:Bot, event: GroupMessageEvent):
+async def _(bot: Bot, event: GroupMessageEvent):
     await check_real_bad_ep(matcher=meal_howto, bot=bot, event=event)
     howto = '''
 0.只有经过认证的优质怡批才可以使用本插件记录。
@@ -554,16 +571,18 @@ async def _(bot:Bot, event: GroupMessageEvent):
     howto += help
     await meal_howto.finish(await to_img_msg(howto, "投喂指南"))
 
+
 @meal_help.handle()
-async def _(bot:Bot, event: GroupMessageEvent):
+async def _(bot: Bot, event: GroupMessageEvent):
     await check_real_bad_ep(matcher=meal_help, bot=bot, event=event)
     help = await get_ellyesmeal_help()
     anno = await db_get_anno()
     help = anno + help
     await meal_help.finish(await to_img_msg(help, "投喂指南"))
 
+
 @sp_whois.handle()
-async def _(bot:Bot, event: GroupMessageEvent):
+async def _(bot: Bot, event: GroupMessageEvent):
     await check_real_bad_ep(matcher=sp_whois, bot=bot, event=event)
     msg = event.get_plaintext()
     if msg.startswith("谁是"):
@@ -595,20 +614,24 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
     else:
         await mark_good_ep.finish("failed")
 
+
 @card_changed.handle()
 async def _(event: Event):
     await db_set_gminfo(event.user_id, event.card_new)
     logger.info(f"user {event.user_id} changed card to {event.card_new}")
+
 
 @welcome_new_ep.handle()
 async def _(event: GroupIncreaseNoticeEvent):
     await get_card_with_cache(event.user_id)
     await welcome_new_ep.finish(MessageSegment.image(file="file:///home/maxesisn/botData/res/ellyewelcome.jpg"))
 
+
 @force_gc_meal.handle()
 async def _():
     await db_clean_fake_meals(force=True)
     await force_gc_meal.finish("ok")
+
 
 @scheduler.scheduled_job("interval", minutes=5)
 async def db_cleaner():
