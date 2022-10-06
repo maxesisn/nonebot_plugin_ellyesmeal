@@ -35,7 +35,7 @@ async def process_long_text(text):
         text = text_chunks
     return text
 
-async def process_anno_format(text):
+async def process_anno_format(text: str):
     if text is None:
         return ""
     text_list = text.split("\n")

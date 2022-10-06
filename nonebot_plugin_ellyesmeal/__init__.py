@@ -1,3 +1,6 @@
+import asyncio
+from random import randint
+from typing_extensions import LiteralString
 from nonebot.log import logger
 from nonebot.rule import to_me, Rule
 from nonebot import on_command, on_notice, on_regex
@@ -5,7 +8,7 @@ from nonebot import get_bot, get_driver
 from nonebot.permission import SUPERUSER, Permission
 from nonebot.params import State, CommandArg, Command, RegexGroup
 from nonebot.typing import T_State
-from nonebot.adapters.onebot.exception import ActionFailed
+from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent, GroupIncreaseNoticeEvent
 from nonebot import require
 require("nonebot_plugin_apscheduler")
@@ -33,7 +36,7 @@ id_pat = re.compile(r"^[A-Za-z0-9]*$")
 
 
 async def ELLYE(bot: Bot, event: Event) -> bool:
-    return event.get_user_id() == "491673070"
+    return event.get_user_id() in ["491673070", "1624230147", "269502551"]
 
 SU_OR_ELLYE = Permission(ELLYE) | SUPERUSER
 
@@ -43,7 +46,7 @@ async def cc_notice_checker(event: Event) -> bool:
 
 
 async def ellye_group_checker(event: Event) -> bool:
-    return str(event.group_id) == "367501912"
+    return str(event.group_id) == "813563151"
 
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 eg_rule = Rule(ellye_group_checker)
@@ -83,8 +86,8 @@ async def get_card_with_cache(id):
     card = await db_get_gminfo(id)
     if card is None:
         try:
-            giver_info = await bot.get_group_member_info(group_id="367501912", user_id=id)
-            card = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
+            giver_info: dict = await bot.get_group_member_info(group_id="367501912", user_id=id)
+            card: str = giver_info["card"] or giver_info["nickname"] or giver_info["user_id"]
             await db_set_gminfo(id, card)
             logger.info(f"{id}'s card is {card}, cached it")
         except ActionFailed:
@@ -95,7 +98,7 @@ async def get_card_with_cache(id):
 
 
 async def insert_anno(text):
-    anno = await db_get_anno()
+    anno: str | None = await db_get_anno()
     anno = await process_anno_format(anno)
     text = anno + text
     return text
@@ -315,7 +318,7 @@ async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
         await ellyesmeal.finish(await to_img_msg(f"投喂成功！  ID: {unique_id.upper()}"))
 
 
-async def get_ellyes_meal(id, day, show_all=False, include_deleted=False):
+async def get_ellyes_meal(id, day, show_all=False, include_deleted=False) -> str | LiteralString:
     year = datetime.now().year
     month = datetime.now().month
     today = datetime.now().day
@@ -553,18 +556,13 @@ async def _(bot: Bot, event: GroupMessageEvent):
 1.你需要填写怡宝的收货信息：
 收件人：陈泓仰 【女士】
 手机：19121671082
-[公寓地址]
-   广东省深圳市南山区泊寓深圳（科技园店）
-即【广东省深圳市南山区北环大道10092号】
-[公司地址]
-   广东省深圳市创益科技大厦美团外卖柜 
+地址：我不到啊
 -----
 2.你应该给怡宝投喂什么：
 为了避免怡宝天天吃剩饭的现象发生，提高群内怡批的参与度，你应当购买小份的主食（如肠粉）/饮品（半糖少冰）/甜食（要耐放）/水果（不要瓜类）等，价格保持在20-30元左右以提升怡宝的好感度。
 -----
 3.你应该在什么时间投喂：
-工作日早10点至下午4点，地址为公司地址；
-休息日全天均为公寓地址。
+24小时均可投喂，只要你有怡宝的地址。
 -----
 4.你应该如何记录给怡宝点的外卖：'''
     help = await get_ellyesmeal_help()
@@ -624,6 +622,7 @@ async def _(event: Event):
 @welcome_new_ep.handle()
 async def _(event: GroupIncreaseNoticeEvent):
     await get_card_with_cache(event.user_id)
+    asyncio.sleep(randint(2, 4))
     await welcome_new_ep.finish(MessageSegment.image(file="file:///home/maxesisn/botData/res/ellyewelcome.jpg"))
 
 

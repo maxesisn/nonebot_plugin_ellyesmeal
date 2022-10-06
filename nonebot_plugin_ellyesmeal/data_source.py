@@ -9,10 +9,11 @@ from datetime import datetime, timedelta
 from .mongo_source import meals_data, whitelist_data, cards_data, misc_data
 from .utils import shanghai_tz
 
+
 async def get_gm_info(user_id):
     user_id = str(user_id)
-    result = cards_data.find_one({'id': user_id})
-    card = result['card'] if result else None
+    result: dict = cards_data.find_one({'id': user_id})
+    card: str = result['card'] if result else None
     return card
 
 
@@ -40,6 +41,7 @@ async def get_goodep(user_id):
     result = whitelist_data.find_one({'id': user_id})
     return True if result else False
 
+
 async def check_id_exist(id):
     id = meals_data.find_one({'id': id})
     return bool(id)
@@ -60,7 +62,8 @@ async def get_decent_meals():
             month = 12
             year = year - 1
         today = monthrange(year, month)[1] + 1
-    decent_time = datetime(year=year, month=month, day=today-1, hour=0, minute=0, second=0)
+    decent_time = datetime(year=year, month=month,
+                           day=today-1, hour=0, minute=0, second=0)
     decent_time = decent_time - timedelta(hours=8)
     result = meals_data.find(
         {
@@ -95,7 +98,8 @@ async def del_exact_meal(id, k=None, v=None):
     if k is not None:
         result = meals_data.find_one({'id': id})
         if result[k] == v:
-            result = meals_data.update_one({'id': id}, {"$set": {'status': '已删除'}})
+            result = meals_data.update_one(
+                {'id': id}, {"$set": {'status': '已删除'}})
         else:
             result = None
     else:
@@ -116,7 +120,8 @@ async def update_autoep_status(id, status):
 
 
 async def db_clean_fake_meals(force=False):
-    timer_final = datetime(year=2099, month=12, day=31, hour=23, minute=59, second=59)
+    timer_final = datetime(year=2099, month=12, day=31,
+                           hour=23, minute=59, second=59)
     timer_for_hidden = datetime.now() - timedelta(hours=2) if not force else timer_final
     timer_for_autoep = datetime.now() - timedelta(hours=3) if not force else timer_final
     result_hidden = meals_data.find({
@@ -133,9 +138,9 @@ async def db_clean_fake_meals(force=False):
     for result in result_hidden:
         greyed_users.append(result['giver'])
         logger.info(f'外卖{result["id"]}因被隐藏+超时被删除')
-        meals_data.update_one({'_id': result['_id']}, {"$set": {'status': '已删除'}})
-        
-        
+        meals_data.update_one({'_id': result['_id']}, {
+                              "$set": {'status': '已删除'}})
+
     result_autoep = meals_data.find({
         "$and": [
             {
@@ -149,27 +154,33 @@ async def db_clean_fake_meals(force=False):
     for result in result_autoep:
         greyed_users.append(result['giver'])
         logger.info(f'外卖{result["id"]}因被自动标记失效+超时被删除')
-        meals_data.update_one({'_id': result['_id']}, {"$set": {'status': '已删除'}})
+        meals_data.update_one({'_id': result['_id']}, {
+                              "$set": {'status': '已删除'}})
 
     if greyed_users:
         await receive_greyed_users(greyed_users)
+
 
 async def get_announcement():
     result = misc_data.find_one({'name': 'announcement'})
     return result['content'] if result else ""
 
+
 async def set_announcement(content):
     result = misc_data.update_one(
         {'name': 'announcement'},
-        {'$set': {'content': content, 'set_time': shanghai_tz.localize(datetime.now())}},
+        {'$set': {'content': content,
+                  'set_time': shanghai_tz.localize(datetime.now())}},
         upsert=True
     )
     return result.modified_count
+
 
 async def clean_outdated_announcement():
     result = misc_data.find_one({'name': 'announcement'})
     if result:
         if shanghai_tz.localize(datetime.now()) - result['set_time'] > timedelta(hours=24):
-            misc_data.update_one({'name': 'announcement'}, {"$set": {'content': None}})
+            misc_data.update_one({'name': 'announcement'}, {
+                                 "$set": {'content': None}})
             return True
     return False
