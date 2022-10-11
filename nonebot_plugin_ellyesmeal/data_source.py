@@ -7,8 +7,21 @@ from .auth_ep import receive_greyed_users
 from datetime import datetime, timedelta
 
 from .mongo_source import meals_data, whitelist_data, cards_data, misc_data
-from .utils import shanghai_tz
+from .utils import shanghai_tz, global_config
 
+from redis import StrictRedis
+
+rd_host = global_config.redis_host
+rd_port = global_config.redis_port
+rd_pass = global_config.redis_pass
+rd_db = global_config.redis_db
+rd = StrictRedis(host=rd_host, port=rd_port, password=rd_pass, db=rd_db)
+
+def set_ratelimited(name, time):
+    rd.set("RL_"+name, datetime.now().strftime("%m/%d/%Y, %H:%M:%S"), ex=time)
+
+def get_ratelimited(name):
+    return rd.get("RL_"+name)
 
 async def get_gm_info(user_id):
     user_id = str(user_id)

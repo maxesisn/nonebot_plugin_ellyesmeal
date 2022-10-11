@@ -4,9 +4,9 @@ from typing_extensions import LiteralString
 from nonebot.log import logger
 from nonebot.rule import to_me, Rule
 from nonebot import on_command, on_notice, on_regex
-from nonebot import get_bot, get_driver
+from nonebot import get_bot
 from nonebot.permission import SUPERUSER, Permission
-from nonebot.params import State, CommandArg, Command, RegexGroup
+from nonebot.params import StateParam, CommandArg, Command, RegexGroup
 from nonebot.typing import T_State
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent, GroupIncreaseNoticeEvent
@@ -26,20 +26,24 @@ from .auth_ep import receive_greyed_users, check_auto_good_ep, clean_greyed_user
 from .data_source import get_announcement as db_get_anno, set_announcement as db_set_anno, clean_outdated_announcement as db_clean_outdated_anno
 from .data_source import set_goodep as db_set_goodeps, get_goodep as db_get_goodep
 from .data_source import check_id_exist, db_clean_fake_meals, del_exact_meal, get_decent_meals, get_exact_meal, get_gm_info as db_get_gminfo, insert_meal, set_gm_info as db_set_gminfo, update_autoep_status, update_exact_meal
-
-
-
-
-global_config = get_driver().config
+from .data_source import get_ratelimited, set_ratelimited
 
 id_pat = re.compile(r"^[A-Za-z0-9]*$")
 
+ellye_gave_new_address = False
 
 async def ELLYE(bot: Bot, event: Event) -> bool:
     return event.get_user_id() in ["491673070", "1624230147", "269502551"]
 
 SU_OR_ELLYE = Permission(ELLYE) | SUPERUSER
 
+def ratelimited(*args, **kwargs):
+    def wrapper(func):
+        if get_ratelimited(func.__name__):
+            return
+        set_ratelimited(func.__name__, 30)
+        return func(*args, **kwargs)
+    return wrapper
 
 async def cc_notice_checker(event: Event) -> bool:
     return event.get_event_name() == "notice.group_card"
@@ -48,29 +52,33 @@ async def cc_notice_checker(event: Event) -> bool:
 async def ellye_group_checker(event: Event) -> bool:
     return str(event.group_id) == "813563151"
 
+async def ellye_has_address_checker() -> bool:
+    return ellye_gave_new_address
+
 cc_rule = Rule(cc_notice_checker, ellye_group_checker)
 eg_rule = Rule(ellye_group_checker)
 eg_tome_rule = Rule(to_me, ellye_group_checker)
+eg_able_to_order_rule = Rule(ellye_group_checker, ellye_has_address_checker)
 
 ellye_bad_title = ("工贼", "懒狗", "渣男", "怡宝")
 ellye_good_title = ("善人", "仁人君子", "贤人", "完人", "正人君子", "仁人义士",
                     "圣者", "贤士", "谦谦君子", "仁人志士", "贤达", "好汉", "能人", "怡宝")
 
 ellyesmeal = on_command(
-    "怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"})
-ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?")
+    "怡宝今天吃", aliases={"怡宝今天喝", "怡宝明天吃", "怡宝明天喝", "怡宝昨天吃", "怡宝昨天喝"}, rule=eg_able_to_order_rule)
+ellyesmeal_in_xdays = on_regex(r"怡宝这(两|三)天(吃|喝)(了)?什么(.*)?", rule=eg_able_to_order_rule)
 update_meal_status = on_command(
-    "更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"})
-delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"})
-force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE)
-meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_rule)
-sp_whois = on_regex(r"谁是|是谁", rule=eg_rule)
-meal_help = on_command("帮助", rule=to_me())
-set_anno = on_command("设置公告", aliases={"创建公告", "更新公告"}, permission=SU_OR_ELLYE)
-append_anno = on_command("追加公告", aliases={"附加公告"}, permission=SU_OR_ELLYE)
-delete_anno = on_command("删除公告", permission=SU_OR_ELLYE)
-mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE)
-force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE)
+    "更新外卖状态", aliases={"更新订单状态", "修改外卖状态", "修改订单状态", "标记外卖", "标记订单"}, rule=eg_able_to_order_rule)
+delete_meal = on_command("删除外卖", aliases={"删除订单", "移除外卖", "移除订单"}, rule=eg_able_to_order_rule)
+force_delete_meal = on_command("强制删除外卖", permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
+meal_howto = on_command("投食指南", aliases={"投喂指南"}, rule=eg_able_to_order_rule)
+sp_whois = on_regex(r"谁是|是谁", rule=eg_able_to_order_rule)
+meal_help = on_command("帮助", rule=to_me() & eg_able_to_order_rule)
+set_anno = on_command("设置公告", aliases={"创建公告", "更新公告"}, permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
+append_anno = on_command("追加公告", aliases={"附加公告"}, permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
+delete_anno = on_command("删除公告", permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
+mark_good_ep = on_command("标记优质怡批", permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
+force_gc_meal = on_command("外卖gc", permission=SU_OR_ELLYE, rule=eg_able_to_order_rule)
 card_changed = on_notice(rule=cc_rule)
 welcome_new_ep = on_notice(rule=eg_rule)
 
@@ -105,7 +113,7 @@ async def insert_anno(text):
 
 
 @ellyesmeal.handle()
-async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, command: Tuple[str, ...] = Command(), args: Message = CommandArg(), state: T_State = StateParam()):
     await check_real_bad_ep(matcher=ellyesmeal, bot=bot, event=event)
     command = command[0]
     day = command[2:4]
@@ -211,7 +219,7 @@ async def _(bot: Bot, event: GroupMessageEvent, rg=RegexGroup()):
 
 
 @ellyesmeal.got("meal_string_data")
-async def _(bot: Bot, event: GroupMessageEvent, state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, state: T_State = StateParam()):
     meal_string_data: list[str] = state["meal_string_data"]
 
     day = state["day"]
@@ -442,7 +450,7 @@ async def get_ellyesmeal_help():
 
 
 @update_meal_status.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     await check_real_bad_ep(matcher=update_meal_status, bot=bot, event=event)
     sub_commands = str(args)
     sub_commands = sub_commands.split(" ")
@@ -482,7 +490,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), st
 
 
 @delete_meal.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     await check_real_bad_ep(matcher=delete_meal, bot=bot, event=event)
     sub_commands = str(args).split(" ")
     msg = ""
@@ -503,7 +511,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), st
 
 
 @force_delete_meal.handle()
-async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     ids = str(args).split(" ")
     for id in ids:
         await del_exact_meal(id.upper())
@@ -511,14 +519,14 @@ async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_Sta
 
 
 @set_anno.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     content = str(args)
     await db_set_anno(content)
     await set_anno.finish("ok")
 
 
 @append_anno.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     old_anno = await db_get_anno()
     new_anno = str(args)
     new_anno = old_anno + "\n" + new_anno
@@ -527,7 +535,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), st
 
 
 @delete_anno.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     anno_num = str(args)
     if not anno_num:
         await db_set_anno("")
@@ -595,7 +603,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
 
 
 @mark_good_ep.handle()
-async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = State()):
+async def _(event: GroupMessageEvent, args: Message = CommandArg(), state: T_State = StateParam()):
     is_have_result = False
     for ms in event.get_message():
         if ms.type == "at":
@@ -619,10 +627,11 @@ async def _(event: Event):
     logger.info(f"user {event.user_id} changed card to {event.card_new}")
 
 
+@ratelimited
 @welcome_new_ep.handle()
 async def _(event: GroupIncreaseNoticeEvent):
     await get_card_with_cache(event.user_id)
-    asyncio.sleep(randint(2, 4))
+    await asyncio.sleep(randint(3, 5))
     await welcome_new_ep.finish(MessageSegment.image(file="file:///home/maxesisn/botData/res/ellyewelcome.jpg"))
 
 

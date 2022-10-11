@@ -3,11 +3,13 @@ import pytz
 
 from .txt2img.txt2img import Txt2Img
 from nonebot.adapters.onebot.v11 import MessageSegment
+from nonebot import get_driver
 
 font_size = 32
 shanghai_tz = pytz.timezone('Asia/Shanghai')
 wide_pat = re.compile(r"[^\x00-\xff]")
 
+global_config = get_driver().config
 
 async def to_img_msg(content, title="信息"):
     img = Txt2Img(font_size)

@@ -15,8 +15,6 @@ BACKGROUND_FILE = IMAGE_PATH / "background.png"
 BANNER_FILE = IMAGE_PATH / "banner.png"
 FONT_FILE = FONT_PATH / "sarasa-mono-sc-regular.ttf"
 
-print(FONT_FILE)
-
 class Txt2Img:
     """Share your text as a image"""
 
